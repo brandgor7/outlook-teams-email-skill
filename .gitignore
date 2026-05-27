@@ -1,0 +1,8 @@
+node_modules/
+outlook-tokens.json
+outlook-msal-cache.json
+outlook-summary.md
+run-state.json
+*.swp
+*.swo
+.DS_Store

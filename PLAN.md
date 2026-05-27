@@ -51,7 +51,7 @@ User (Telegram / Teams)
 
 ---
 
-## Phase 1 — OAuth & Token Management
+## Phase 1 — OAuth & Token Management ✅
 
 ### 1.1 Azure App Registration (manual, one-time)
 
@@ -100,7 +100,7 @@ Shared module imported by all other scripts:
 
 ---
 
-## Phase 2 — MCP Server
+## Phase 2 — MCP Server ✅
 
 ### 2.1 `scripts/mcp-server.mjs`
 
@@ -150,7 +150,7 @@ openclaw mcp set outlook '{
 
 ---
 
-## Phase 3 — User Config
+## Phase 3 — User Config ✅
 
 ### 3.1 `config.json` — User Preferences
 
@@ -203,7 +203,7 @@ All structured workflow behaviour is driven by this file. Edit to customise.
 
 ---
 
-## Phase 4 — Structured Workflows
+## Phase 4 — Structured Workflows ✅
 
 ### 4.1 `scripts/run-summary.mjs` — Email Summary Pipeline
 
@@ -308,7 +308,7 @@ Tracks pipeline state between runs:
 
 ---
 
-## Phase 5 — Skill (Instruction Layer)
+## Phase 5 — Skill (Instruction Layer) ✅
 
 ### 5.1 `SKILL.md`
 
@@ -341,7 +341,7 @@ Tells the agent:
 
 ---
 
-## Phase 6 — Cron Jobs
+## Phase 6 — Cron Jobs ✅
 
 Set up after everything is tested manually.
 
@@ -367,7 +367,7 @@ Offset the to-do job by ~5 minutes so the summary always runs first.
 
 ---
 
-## Phase 7 — Provisioning (Setup Flows)
+## Phase 7 — Provisioning (Setup Flows) ✅
 
 Guided setup conversations using `auth.mjs` + the MCP tools to discover IDs.
 

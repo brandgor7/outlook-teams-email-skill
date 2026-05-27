@@ -1,0 +1,16 @@
+{
+  "name": "outlook-email-skill",
+  "version": "1.0.0",
+  "description": "OpenClaw skill for Outlook + Teams email assistant",
+  "type": "module",
+  "scripts": {
+    "auth": "node scripts/auth.mjs",
+    "mcp": "node scripts/mcp-server.mjs",
+    "summary": "node scripts/run-summary.mjs",
+    "todos": "node scripts/run-todos.mjs"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^2.16.2",
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}
