@@ -7,7 +7,7 @@
     "unreadOnly": false,
     "delivery": {
       "channels": [
-        { "type": "telegram", "chatId": "8524887570" },
+        { "type": "telegram", "chatId": "" },
         { "type": "teams", "teamId": "", "channelId": "" }
       ]
     }

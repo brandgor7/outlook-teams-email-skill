@@ -10,14 +10,14 @@ email summaries with to-do extraction.
 
 1. [Prerequisites](#prerequisites)
 2. [Installation](#installation)
-3. [Phase 1 — Azure App Registration](#phase-1--azure-app-registration)
-4. [Phase 1 — Authentication](#phase-1--authentication)
-5. [Phase 2 — MCP Server Registration](#phase-2--mcp-server-registration)
-6. [Phase 3 — Configuration](#phase-3--configuration)
-7. [Phase 4 — Structured Workflows](#phase-4--structured-workflows)
-8. [Phase 5 — Skill Registration](#phase-5--skill-registration)
-9. [Phase 6 — Cron Jobs](#phase-6--cron-jobs)
-10. [Phase 7 — Teams & Planner Provisioning](#phase-7--teams--planner-provisioning)
+3. [Azure App Registration](#azure-app-registration)
+4. [Authentication](#authentication)
+5. [MCP Server Registration](#mcp-server-registration)
+6. [Configuration](#configuration)
+7. [Structured Workflows](#structured-workflows)
+8. [Skill Registration](#skill-registration)
+9. [Cron Jobs](#cron-jobs)
+10. [Teams & Planner Provisioning](#teams--planner-provisioning)
 11. [Telegram Setup](#telegram-setup)
 12. [LLM Gateway Setup](#llm-gateway-setup)
 13. [File Reference](#file-reference)
@@ -54,7 +54,7 @@ This installs:
 
 ---
 
-## Phase 1 — Azure App Registration
+## Azure App Registration
 
 This is a one-time manual step. You need to register an Azure app to get a
 Client ID.
@@ -99,7 +99,7 @@ Client ID.
 
 ---
 
-## Phase 1 — Authentication
+## Authentication
 
 After filling in `clientId` in `config.json`, run the device code flow:
 
@@ -123,7 +123,7 @@ node scripts/auth.mjs
 
 ---
 
-## Phase 2 — MCP Server Registration
+## MCP Server Registration
 
 Register the MCP server with OpenClaw so the agent can use the tools
 conversationally:
@@ -150,7 +150,7 @@ openclaw mcp list
 
 ---
 
-## Phase 3 — Configuration
+## Configuration
 
 Edit `config.json` to match your preferences. The defaults are:
 
@@ -207,7 +207,7 @@ Edit `config.json` to match your preferences. The defaults are:
 
 ---
 
-## Phase 4 — Structured Workflows
+## Structured Workflows
 
 ### Email Summary
 
@@ -254,7 +254,7 @@ The script:
 
 ---
 
-## Phase 5 — Skill Registration
+## Skill Registration
 
 Register `SKILL.md` as an OpenClaw skill so the agent uses the correct
 instructions:
@@ -267,7 +267,7 @@ openclaw skill add outlook-email /home/node/.openclaw/workspace/skills/outlook-e
 
 ---
 
-## Phase 6 — Cron Jobs
+## Cron Jobs
 
 Set up after everything is tested manually. The summary and to-do jobs run
 every 6 hours, with the to-do job offset by 5 minutes.
@@ -303,7 +303,7 @@ openclaw cron list
 
 ---
 
-## Phase 7 — Teams & Planner Provisioning
+## Teams & Planner Provisioning
 
 Run this after the MCP server is working, to discover your Teams IDs and fill
 in `config.json`.
@@ -440,7 +440,7 @@ export TELEGRAM_BOT_TOKEN="your_token"
 Or add it to your shell profile.
 
 ### "Teams teamId or channelId not configured"
-Run Teams provisioning (Phase 7) or manually fill in `config.json`.
+Run Teams provisioning or manually fill in `config.json`.
 
 ### MCP server not showing tools
 1. Verify the path in `openclaw mcp set` is correct for your system
