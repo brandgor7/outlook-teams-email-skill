@@ -1,0 +1,452 @@
+# Outlook + Teams Email Assistant
+
+An OpenClaw skill that connects to Microsoft Outlook and Teams via the Microsoft
+Graph API. Provides conversational email/calendar/tasks access and scheduled
+email summaries with to-do extraction.
+
+---
+
+## Table of Contents
+
+1. [Prerequisites](#prerequisites)
+2. [Installation](#installation)
+3. [Phase 1 — Azure App Registration](#phase-1--azure-app-registration)
+4. [Phase 1 — Authentication](#phase-1--authentication)
+5. [Phase 2 — MCP Server Registration](#phase-2--mcp-server-registration)
+6. [Phase 3 — Configuration](#phase-3--configuration)
+7. [Phase 4 — Structured Workflows](#phase-4--structured-workflows)
+8. [Phase 5 — Skill Registration](#phase-5--skill-registration)
+9. [Phase 6 — Cron Jobs](#phase-6--cron-jobs)
+10. [Phase 7 — Teams & Planner Provisioning](#phase-7--teams--planner-provisioning)
+11. [Telegram Setup](#telegram-setup)
+12. [LLM Gateway Setup](#llm-gateway-setup)
+13. [File Reference](#file-reference)
+14. [Troubleshooting](#troubleshooting)
+
+---
+
+## Prerequisites
+
+- [Node.js](https://nodejs.org/) v18 or later (for native `fetch` support)
+- [OpenClaw](https://openclaw.dev) installed and running
+- A Microsoft account (personal or work/school)
+- (Optional) A Telegram bot token for Telegram delivery
+
+---
+
+## Installation
+
+This skill lives at `~/.openclaw/workspace/skills/outlook-email/`. Clone or
+copy this directory there, then install dependencies:
+
+```bash
+cd ~/.openclaw/workspace/skills/outlook-email
+npm install
+```
+
+This installs:
+- `@azure/msal-node` — Microsoft Authentication Library for token management
+- `@modelcontextprotocol/sdk` — MCP server SDK
+
+> **Note:** `node_modules`, `outlook-tokens.json`, `outlook-msal-cache.json`,
+> `outlook-summary.md`, and `run-state.json` are all `.gitignore`d and will not
+> be committed.
+
+---
+
+## Phase 1 — Azure App Registration
+
+This is a one-time manual step. You need to register an Azure app to get a
+Client ID.
+
+1. Go to [https://portal.azure.com](https://portal.azure.com) → **App registrations** → **New registration**
+2. **Name:** `OpenClaw Assistant`
+3. **Supported account types:** Personal Microsoft accounts only
+4. Click **Register**
+5. Go to **Authentication** → **Add a platform** → **Mobile and desktop applications**
+   - Tick: `https://login.microsoftonline.com/common/oauth2/nativeclient`
+   - Click **Configure**
+6. Under **Authentication**, set **Allow public client flows** → **Yes** → Save
+7. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**
+   Add all of the following:
+   - `Mail.Read`
+   - `Mail.ReadWrite`
+   - `Mail.Send`
+   - `Calendars.Read`
+   - `Calendars.ReadWrite`
+   - `ChannelMessage.Read.All`
+   - `ChannelMessage.Send`
+   - `Tasks.Read`
+   - `Tasks.ReadWrite`
+   - `offline_access`
+   - `User.Read`
+8. Click **Grant admin consent** (or ask your tenant admin to do this)
+9. Go to **Overview** and copy the **Application (client) ID**
+
+**Paste the Client ID into `config.json`:**
+```json
+{
+  "auth": {
+    "clientId": "YOUR-CLIENT-ID-HERE",
+    "authority": "https://login.microsoftonline.com/consumers"
+  }
+}
+```
+
+> **Work/school accounts:** Change `authority` to
+> `https://login.microsoftonline.com/organizations` and ensure your tenant
+> admin has granted consent.
+
+---
+
+## Phase 1 — Authentication
+
+After filling in `clientId` in `config.json`, run the device code flow:
+
+```bash
+node scripts/auth.mjs
+```
+
+1. The script prints a URL and a short code
+2. Open the URL in your browser and enter the code
+3. Sign in with your Microsoft account
+4. Return to the terminal — you'll see "Auth complete"
+
+This writes two files to the workspace root:
+- `outlook-tokens.json` — access token + expiry
+- `outlook-msal-cache.json` — MSAL cache with refresh token (for silent renewal)
+
+**To re-authenticate** (if your token expires):
+```bash
+node scripts/auth.mjs
+```
+
+---
+
+## Phase 2 — MCP Server Registration
+
+Register the MCP server with OpenClaw so the agent can use the tools
+conversationally:
+
+```bash
+openclaw mcp set outlook '{
+  "command": "node",
+  "args": ["/home/node/.openclaw/workspace/skills/outlook-email/scripts/mcp-server.mjs"]
+}'
+```
+
+> **Adjust the path** to match your actual install location
+> (e.g., `/Users/yourname/.openclaw/workspace/skills/outlook-email/scripts/mcp-server.mjs`).
+
+Restart the OpenClaw agent to pick up the new MCP server:
+```bash
+openclaw restart
+```
+
+**Verify the server is registered:**
+```bash
+openclaw mcp list
+```
+
+---
+
+## Phase 3 — Configuration
+
+Edit `config.json` to match your preferences. The defaults are:
+
+```json
+{
+  "summary": {
+    "wordCount": 150,
+    "tone": "concise and professional",
+    "categories": ["urgent", "action required", "newsletters", "work", "personal", "other"],
+    "maxEmails": 30,
+    "unreadOnly": false,
+    "delivery": {
+      "channels": [
+        { "type": "telegram", "chatId": "YOUR_TELEGRAM_CHAT_ID" },
+        { "type": "teams", "teamId": "", "channelId": "" }
+      ]
+    }
+  },
+  "todos": {
+    "enabled": true,
+    "source": "summary",
+    "delivery": {
+      "type": "planner",
+      "planId": "",
+      "bucketId": ""
+    }
+  },
+  "llm": {
+    "baseUrl": "http://127.0.0.1:18789/v1",
+    "model": "openclaw/default",
+    "gatewayConfigPath": "~/.openclaw/openclaw.json",
+    "modelOverride": ""
+  },
+  "auth": {
+    "clientId": "YOUR_CLIENT_ID_HERE",
+    "authority": "https://login.microsoftonline.com/consumers"
+  }
+}
+```
+
+### Key settings
+
+| Setting | Description |
+|---|---|
+| `summary.wordCount` | Target word count for the summary prose |
+| `summary.tone` | Writing tone instruction sent to the LLM |
+| `summary.maxEmails` | Max emails fetched per run |
+| `summary.unreadOnly` | `true` = only fetch unread emails |
+| `summary.delivery.channels` | Array of delivery destinations (Telegram, Teams) |
+| `todos.enabled` | `false` to disable to-do creation entirely |
+| `todos.delivery.planId` | Microsoft Planner plan id (fill after Teams setup) |
+| `todos.delivery.bucketId` | Planner bucket id (optional) |
+| `llm.modelOverride` | Override backend model for summaries (e.g., `openai/gpt-4o-mini`); leave blank to use active model |
+
+---
+
+## Phase 4 — Structured Workflows
+
+### Email Summary
+
+Run manually:
+```bash
+node scripts/run-summary.mjs
+```
+
+Dry run (preview output, skip delivery):
+```bash
+node scripts/run-summary.mjs --dry-run
+```
+
+The script:
+1. Fetches emails from the inbox (respects `maxEmails`, `unreadOnly`)
+2. Calls the LLM to produce a grouped summary
+3. Delivers to all configured channels (Telegram, Teams)
+4. Writes output to `outlook-summary.md` for follow-up
+5. Updates `run-state.json` with `lastSummaryAt`
+
+### To-Do Extraction
+
+Run manually (after running the summary):
+```bash
+node scripts/run-todos.mjs
+```
+
+Dry run (preview tasks, don't create):
+```bash
+node scripts/run-todos.mjs --dry-run
+```
+
+The script:
+1. Reads `outlook-summary.md`
+2. Calls the LLM to extract action items as structured JSON
+3. Creates each item as a Planner task
+4. Updates `run-state.json` with `lastTodosAt` and `createdTaskIds`
+
+> **Telegram delivery** requires the `TELEGRAM_BOT_TOKEN` environment variable:
+> ```bash
+> export TELEGRAM_BOT_TOKEN="your_bot_token_here"
+> node scripts/run-summary.mjs
+> ```
+
+---
+
+## Phase 5 — Skill Registration
+
+Register `SKILL.md` as an OpenClaw skill so the agent uses the correct
+instructions:
+
+```bash
+openclaw skill add outlook-email /home/node/.openclaw/workspace/skills/outlook-email/SKILL.md
+```
+
+> Adjust the path to your actual install location.
+
+---
+
+## Phase 6 — Cron Jobs
+
+Set up after everything is tested manually. The summary and to-do jobs run
+every 6 hours, with the to-do job offset by 5 minutes.
+
+### Summary (every 6 hours)
+
+```bash
+openclaw cron add \
+  --name "Outlook Email Summary" \
+  --every "6h" \
+  --session isolated \
+  --message "Run the email summary workflow by executing: node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-summary.mjs — then confirm delivery completed or report any errors."
+```
+
+### To-Dos (every 6 hours, 5 min after summary)
+
+```bash
+openclaw cron add \
+  --name "Email To-Dos" \
+  --every "6h" \
+  --delay "5m" \
+  --session isolated \
+  --message "Run the to-do creation workflow by executing: node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-todos.mjs — then confirm tasks were created or report any errors."
+```
+
+**Verify cron jobs:**
+```bash
+openclaw cron list
+```
+
+> **Note:** Adjust `/home/node/...` to match your actual install path before
+> running these commands.
+
+---
+
+## Phase 7 — Teams & Planner Provisioning
+
+Run this after the MCP server is working, to discover your Teams IDs and fill
+in `config.json`.
+
+### Guided setup via the agent
+
+1. **Start the conversation:**
+   > "Set up Teams"
+
+2. The agent will call `list_teams` and show your teams. Tell it which team to
+   use for delivery.
+
+3. The agent calls `list_channels` for that team. Tell it which channel to post
+   to.
+
+4. The agent writes `teamId` and `channelId` to `config.json`.
+
+5. The agent calls `list_tasks` to find your Planner plans. Tell it which plan
+   to use for to-dos.
+
+6. The agent writes `planId` to `config.json`.
+
+7. *(Optional)* Ask for buckets and tell the agent which one to use.
+
+8. Preview the summary format:
+   ```bash
+   node scripts/run-summary.mjs --dry-run
+   ```
+
+### Manual setup (alternative)
+
+If you prefer to configure manually, run these commands to find your IDs:
+
+```bash
+# Find your team IDs
+node -e "
+  import('./scripts/mcp-server.mjs').then(() => {})
+"
+```
+
+Or use the MCP tools via the OpenClaw agent:
+- `list_teams` → note the `id` of your target team
+- `list_channels teamId=<id>` → note the `id` of your target channel
+- `list_tasks` → note the `planId` of your target plan
+
+Then paste the IDs into `config.json`.
+
+---
+
+## Telegram Setup
+
+1. Create a Telegram bot: message [@BotFather](https://t.me/BotFather) and use `/newbot`
+2. Copy the bot token (format: `123456:ABC-DEF1234...`)
+3. Get your chat ID: message [@userinfobot](https://t.me/userinfobot)
+4. Set `summary.delivery.channels[].chatId` in `config.json`
+5. Export the bot token before running summary scripts:
+   ```bash
+   export TELEGRAM_BOT_TOKEN="your_token_here"
+   ```
+   Or add it to your shell profile (`~/.bashrc`, `~/.zshrc`).
+
+---
+
+## LLM Gateway Setup
+
+The summary and to-do scripts call OpenClaw's local OpenAI-compatible gateway
+instead of an external API. Ensure the gateway is configured:
+
+```bash
+# Enable the chatCompletions endpoint
+openclaw config patch --stdin <<'EOF'
+{"gateway":{"http":{"endpoints":{"chatCompletions":{"enabled":true}}}}}
+EOF
+
+# Restart the gateway
+openclaw gateway restart
+```
+
+The scripts read the gateway token directly from `~/.openclaw/openclaw.json`
+(no environment variable needed). Ensure `gateway.auth.mode` is set to `"token"`.
+
+To use a specific model for summaries (independent of your chat model), set
+`llm.modelOverride` in `config.json`, e.g.:
+```json
+"llm": {
+  "modelOverride": "openai/gpt-4o-mini"
+}
+```
+
+---
+
+## File Reference
+
+| File | Description | Git-tracked |
+|---|---|---|
+| `SKILL.md` | Agent instruction layer | ✅ |
+| `package.json` | Node.js package manifest | ✅ |
+| `config.json` | User preferences (edit this) | ✅ |
+| `scripts/token.mjs` | Shared MSAL token helper | ✅ |
+| `scripts/auth.mjs` | OAuth device code flow | ✅ |
+| `scripts/mcp-server.mjs` | MCP stdio server | ✅ |
+| `scripts/run-summary.mjs` | Email summary pipeline | ✅ |
+| `scripts/run-todos.mjs` | To-do extraction pipeline | ✅ |
+| `outlook-tokens.json` | OAuth access token (auto-generated) | ❌ |
+| `outlook-msal-cache.json` | MSAL refresh token cache (auto-generated) | ❌ |
+| `outlook-summary.md` | Latest summary output (auto-generated) | ❌ |
+| `run-state.json` | Pipeline run state (auto-generated) | ❌ |
+| `node_modules/` | npm dependencies | ❌ |
+
+---
+
+## Troubleshooting
+
+### "Access token is expired"
+Re-run auth:
+```bash
+node scripts/auth.mjs
+```
+
+### "config.json has a placeholder clientId"
+Edit `config.json` and replace `YOUR_CLIENT_ID_HERE` with your Azure app's
+Client ID.
+
+### "openclaw.json not found"
+The LLM scripts read the gateway token from `~/.openclaw/openclaw.json`.
+Ensure OpenClaw is installed and `llm.gatewayConfigPath` in `config.json`
+points to the right location.
+
+### "TELEGRAM_BOT_TOKEN env var not set"
+Export the variable before running:
+```bash
+export TELEGRAM_BOT_TOKEN="your_token"
+```
+Or add it to your shell profile.
+
+### "Teams teamId or channelId not configured"
+Run Teams provisioning (Phase 7) or manually fill in `config.json`.
+
+### MCP server not showing tools
+1. Verify the path in `openclaw mcp set` is correct for your system
+2. Run `openclaw mcp list` to confirm registration
+3. Restart OpenClaw: `openclaw restart`
+
+### Graph API 403 Forbidden
+Ensure admin consent was granted for all permissions in Azure Portal → App
+registrations → API permissions → Grant admin consent.
