@@ -48,77 +48,122 @@ This installs:
 - `@azure/msal-node` — Microsoft Authentication Library for token management
 - `@modelcontextprotocol/sdk` — MCP server SDK
 
-> **Note:** `node_modules`, `outlook-tokens.json`, `outlook-msal-cache.json`,
-> `outlook-summary.md`, and `run-state.json` are all `.gitignore`d and will not
-> be committed.
+> **Note:** `node_modules`, token files, `outlook-summary.md`, and
+> `run-state.json` are all `.gitignore`d and will not be committed.
 
 ---
 
 ## Azure App Registration
 
-This is a one-time manual step. You need to register an Azure app to get a
-Client ID.
+This is a one-time manual step per account type. You need one or two Azure app
+registrations depending on your setup:
+
+| Scenario | Apps needed |
+|---|---|
+| Personal email only | One personal app |
+| Work email + Teams (same tenant) | One work/tenant app |
+| Personal email + Teams | Two apps (personal + work) |
+| Work email + Teams (same tenant, one app) | One work/tenant app — see [Single App for Both](#single-app-for-both-work-email--teams) |
+
+---
+
+### Personal Account App
+
+Use this if your email is a personal Microsoft account (outlook.com, hotmail, live).
 
 1. Go to [https://portal.azure.com](https://portal.azure.com) → **App registrations** → **New registration**
-2. **Name:** `OpenClaw Assistant`
-3. **Supported account types:** Personal Microsoft accounts only
+2. **Name:** `OpenClaw Assistant (Personal)`
+3. **Supported account types:** `Personal Microsoft accounts only`
 4. Click **Register**
 5. Go to **Authentication** → **Add a platform** → **Mobile and desktop applications**
    - Tick: `https://login.microsoftonline.com/common/oauth2/nativeclient`
    - Click **Configure**
 6. Under **Authentication**, set **Allow public client flows** → **Yes** → Save
 7. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**
-   Add all of the following:
-   - `Mail.Read`
-   - `Mail.ReadWrite`
-   - `Mail.Send`
-   - `Calendars.Read`
-   - `Calendars.ReadWrite`
-   - `ChannelMessage.Read.All`
-   - `ChannelMessage.Send`
-   - `Tasks.Read`
-   - `Tasks.ReadWrite`
-   - `offline_access`
-   - `User.Read`
-8. Click **Grant admin consent** (or ask your tenant admin to do this)
-9. Go to **Overview** and copy the **Application (client) ID**
+   Add:
+   - `Mail.Read`, `Mail.ReadWrite`, `Mail.Send`
+   - `Calendars.Read`, `Calendars.ReadWrite`
+   - `offline_access`, `User.Read`
+8. Go to **Overview** and copy the **Application (client) ID**
+9. Paste it into `config.json` under `auth.personal.clientId`
 
-**Paste the Client ID into `config.json`:**
-```json
-{
-  "auth": {
-    "clientId": "YOUR-CLIENT-ID-HERE",
-    "authority": "https://login.microsoftonline.com/consumers"
-  }
-}
-```
+---
 
-> **Work/school accounts:** Change `authority` to
-> `https://login.microsoftonline.com/organizations` and ensure your tenant
-> admin has granted consent.
+### Work / School Account App (for Teams and Planner)
+
+Use this for Teams, Planner, and work email. This app **must** be a single-tenant
+registration (tied to your organization's Azure AD tenant).
+
+1. Sign in to [https://portal.azure.com](https://portal.azure.com) with your **work account**
+2. Go to **App registrations** → **New registration**
+3. **Name:** `OpenClaw Assistant (Work)`
+4. **Supported account types:** `Accounts in this organizational directory only (Single tenant)`
+5. Click **Register**
+6. Go to **Authentication** → **Add a platform** → **Mobile and desktop applications**
+   - Tick: `https://login.microsoftonline.com/common/oauth2/nativeclient`
+   - Click **Configure**
+7. Under **Authentication**, set **Allow public client flows** → **Yes** → Save
+8. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions**
+   Add:
+   - `Mail.Read`, `Mail.ReadWrite`, `Mail.Send` *(if work email)*
+   - `Calendars.Read`, `Calendars.ReadWrite` *(if work calendar)*
+   - `ChannelMessage.Read.All`, `ChannelMessage.Send`
+   - `Tasks.Read`, `Tasks.ReadWrite`
+   - `offline_access`, `User.Read`
+9. Click **Grant admin consent for [Your Org]** → Confirm
+   > If you are not a tenant admin, ask your admin to grant consent.
+10. Go to **Overview** and copy:
+    - **Application (client) ID** → paste into `config.json` as `auth.work.clientId`
+    - **Directory (tenant) ID** → paste into `config.json` as `auth.work.tenantId`
+
+---
+
+### Single App for Both Work Email + Teams
+
+If your email is a work/school account (same tenant as Teams), you can use **one
+single-tenant app** for everything — no personal app needed. In this case:
+
+- Follow the [Work Account App](#work--school-account-app-for-teams-and-planner) steps above
+- Include all Mail, Calendar, Channel, Tasks, and User permissions
+- In `config.json`, only populate `auth.work` and leave `auth.personal` empty (or remove it)
+- Authenticate once: `npm run auth:work`
+- The MCP server and scripts will automatically use the work token for all operations
 
 ---
 
 ## Authentication
 
-After filling in `clientId` in `config.json`, run the device code flow:
+After filling in credentials in `config.json`, run the device code flow for each
+account type you configured.
 
+### Personal account
 ```bash
-node scripts/auth.mjs
+npm run auth:personal
+# or: node scripts/auth.mjs --account=personal
 ```
 
+### Work account
+```bash
+npm run auth:work
+# or: node scripts/auth.mjs --account=work
+```
+
+If you only configured one account type, you can omit `--account` and it will
+auto-detect.
+
+For each run:
 1. The script prints a URL and a short code
 2. Open the URL in your browser and enter the code
-3. Sign in with your Microsoft account
+3. Sign in with the appropriate Microsoft account
 4. Return to the terminal — you'll see "Auth complete"
 
-This writes two files to the workspace root:
-- `outlook-tokens.json` — access token + expiry
-- `outlook-msal-cache.json` — MSAL cache with refresh token (for silent renewal)
+Token files written:
+- Personal: `personal-tokens.json` + `personal-msal-cache.json`
+- Work: `work-tokens.json` + `work-msal-cache.json`
 
 **To re-authenticate** (if your token expires):
 ```bash
-node scripts/auth.mjs
+npm run auth:personal   # or auth:work
 ```
 
 ---
@@ -135,8 +180,7 @@ openclaw mcp set outlook '{
 }'
 ```
 
-> **Adjust the path** to match your actual install location
-> (e.g., `/Users/yourname/.openclaw/workspace/skills/outlook-email/scripts/mcp-server.mjs`).
+> **Adjust the path** to match your actual install location.
 
 Restart the OpenClaw agent to pick up the new MCP server:
 ```bash
@@ -152,7 +196,7 @@ openclaw mcp list
 
 ## Configuration
 
-Edit `config.json` to match your preferences. The defaults are:
+Edit `config.json` to match your preferences:
 
 ```json
 {
@@ -185,11 +229,20 @@ Edit `config.json` to match your preferences. The defaults are:
     "modelOverride": ""
   },
   "auth": {
-    "clientId": "YOUR_CLIENT_ID_HERE",
-    "authority": "https://login.microsoftonline.com/consumers"
+    "personal": {
+      "clientId": "YOUR_PERSONAL_CLIENT_ID",
+      "authority": "https://login.microsoftonline.com/consumers"
+    },
+    "work": {
+      "clientId": "YOUR_WORK_CLIENT_ID",
+      "tenantId": "YOUR_TENANT_ID"
+    }
   }
 }
 ```
+
+If you only need one account type, you can leave the other block's values as
+placeholders — the code will only use whichever account is actually authenticated.
 
 ### Key settings
 
@@ -203,7 +256,10 @@ Edit `config.json` to match your preferences. The defaults are:
 | `todos.enabled` | `false` to disable to-do creation entirely |
 | `todos.delivery.planId` | Microsoft Planner plan id (fill after Teams setup) |
 | `todos.delivery.bucketId` | Planner bucket id (optional) |
-| `llm.modelOverride` | Override backend model for summaries (e.g., `openai/gpt-4o-mini`); leave blank to use active model |
+| `auth.personal.clientId` | Azure app Client ID for personal Microsoft account |
+| `auth.work.clientId` | Azure app Client ID for work/school account |
+| `auth.work.tenantId` | Azure AD tenant/directory ID (from App Registration Overview) |
+| `llm.modelOverride` | Override backend model for summaries; leave blank to use active model |
 
 ---
 
@@ -222,9 +278,9 @@ node scripts/run-summary.mjs --dry-run
 ```
 
 The script:
-1. Fetches emails from the inbox (respects `maxEmails`, `unreadOnly`)
+1. Fetches emails using the personal account token (falls back to work if not configured)
 2. Calls the LLM to produce a grouped summary
-3. Delivers to all configured channels (Telegram, Teams)
+3. Delivers to all configured channels (Telegram uses email token; Teams uses work token)
 4. Writes output to `outlook-summary.md` for follow-up
 5. Updates `run-state.json` with `lastSummaryAt`
 
@@ -243,7 +299,7 @@ node scripts/run-todos.mjs --dry-run
 The script:
 1. Reads `outlook-summary.md`
 2. Calls the LLM to extract action items as structured JSON
-3. Creates each item as a Planner task
+3. Creates each item as a Planner task (uses work account token)
 4. Updates `run-state.json` with `lastTodosAt` and `createdTaskIds`
 
 > **Telegram delivery** requires the `TELEGRAM_BOT_TOKEN` environment variable:
@@ -279,7 +335,7 @@ openclaw cron add \
   --name "Outlook Email Summary" \
   --every "6h" \
   --session isolated \
-  --message "Run the email summary workflow by executing: node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-summary.mjs — then confirm delivery completed or report any errors."
+  --message "Run the email summary workflow by executing: node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-summary.mjs -- then confirm delivery completed or report any errors."
 ```
 
 ### To-Dos (every 6 hours, 5 min after summary)
@@ -290,7 +346,7 @@ openclaw cron add \
   --every "6h" \
   --delay "5m" \
   --session isolated \
-  --message "Run the to-do creation workflow by executing: node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-todos.mjs — then confirm tasks were created or report any errors."
+  --message "Run the to-do creation workflow by executing: node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-todos.mjs -- then confirm tasks were created or report any errors."
 ```
 
 **Verify cron jobs:**
@@ -298,8 +354,7 @@ openclaw cron add \
 openclaw cron list
 ```
 
-> **Note:** Adjust `/home/node/...` to match your actual install path before
-> running these commands.
+> **Note:** Adjust `/home/node/...` to match your actual install path.
 
 ---
 
@@ -335,16 +390,7 @@ in `config.json`.
 
 ### Manual setup (alternative)
 
-If you prefer to configure manually, run these commands to find your IDs:
-
-```bash
-# Find your team IDs
-node -e "
-  import('./scripts/mcp-server.mjs').then(() => {})
-"
-```
-
-Or use the MCP tools via the OpenClaw agent:
+Use the MCP tools via the OpenClaw agent:
 - `list_teams` → note the `id` of your target team
 - `list_channels teamId=<id>` → note the `id` of your target channel
 - `list_tasks` → note the `planId` of your target plan
@@ -369,8 +415,8 @@ Then paste the IDs into `config.json`.
 
 ## LLM Gateway Setup
 
-The summary and to-do scripts call OpenClaw's local OpenAI-compatible gateway
-instead of an external API. Ensure the gateway is configured:
+The summary and to-do scripts call OpenClaw's local OpenAI-compatible gateway.
+Ensure the gateway is configured:
 
 ```bash
 # Enable the chatCompletions endpoint
@@ -385,8 +431,7 @@ openclaw gateway restart
 The scripts read the gateway token directly from `~/.openclaw/openclaw.json`
 (no environment variable needed). Ensure `gateway.auth.mode` is set to `"token"`.
 
-To use a specific model for summaries (independent of your chat model), set
-`llm.modelOverride` in `config.json`, e.g.:
+To use a specific model for summaries, set `llm.modelOverride` in `config.json`:
 ```json
 "llm": {
   "modelOverride": "openai/gpt-4o-mini"
@@ -401,31 +446,58 @@ To use a specific model for summaries (independent of your chat model), set
 |---|---|---|
 | `SKILL.md` | Agent instruction layer | ✅ |
 | `package.json` | Node.js package manifest | ✅ |
-| `config.json` | User preferences (edit this) | ✅ |
+| `config.json` | User preferences and credentials | ✅ |
 | `scripts/token.mjs` | Shared MSAL token helper | ✅ |
 | `scripts/auth.mjs` | OAuth device code flow | ✅ |
 | `scripts/mcp-server.mjs` | MCP stdio server | ✅ |
 | `scripts/run-summary.mjs` | Email summary pipeline | ✅ |
 | `scripts/run-todos.mjs` | To-do extraction pipeline | ✅ |
-| `outlook-tokens.json` | OAuth access token (auto-generated) | ❌ |
-| `outlook-msal-cache.json` | MSAL refresh token cache (auto-generated) | ❌ |
+| `personal-tokens.json` | Personal account access token (auto-generated) | ❌ |
+| `personal-msal-cache.json` | Personal account MSAL cache (auto-generated) | ❌ |
+| `work-tokens.json` | Work account access token (auto-generated) | ❌ |
+| `work-msal-cache.json` | Work account MSAL cache (auto-generated) | ❌ |
 | `outlook-summary.md` | Latest summary output (auto-generated) | ❌ |
 | `run-state.json` | Pipeline run state (auto-generated) | ❌ |
 | `node_modules/` | npm dependencies | ❌ |
+
+> Legacy `outlook-tokens.json` / `outlook-msal-cache.json` are still supported
+> as fallback token files for personal accounts.
 
 ---
 
 ## Troubleshooting
 
-### "Access token is expired"
-Re-run auth:
+### "No tokens found for personal account"
+Run personal auth:
 ```bash
-node scripts/auth.mjs
+npm run auth:personal
 ```
 
+### "No tokens found for work account"
+Run work auth:
+```bash
+npm run auth:work
+```
+
+### "Access token for work account is expired"
+Re-run auth:
+```bash
+npm run auth:work
+```
+
+### "auth.work.tenantId is required"
+Your work app registration requires a tenant ID. Go to Azure Portal →
+App registrations → your app → Overview → copy **Directory (tenant) ID**
+and set it as `auth.work.tenantId` in `config.json`.
+
 ### "config.json has a placeholder clientId"
-Edit `config.json` and replace `YOUR_CLIENT_ID_HERE` with your Azure app's
-Client ID.
+Edit `config.json` and replace `YOUR_PERSONAL_CLIENT_ID` or `YOUR_WORK_CLIENT_ID`
+with your Azure app's actual Client ID.
+
+### Graph API 403 Forbidden on Teams/Planner
+Ensure admin consent was granted for `ChannelMessage.Read.All`, `ChannelMessage.Send`,
+`Tasks.Read`, `Tasks.ReadWrite` in Azure Portal → App registrations → API permissions
+→ Grant admin consent. These permissions require tenant admin approval.
 
 ### "openclaw.json not found"
 The LLM scripts read the gateway token from `~/.openclaw/openclaw.json`.
@@ -446,7 +518,3 @@ Run Teams provisioning or manually fill in `config.json`.
 1. Verify the path in `openclaw mcp set` is correct for your system
 2. Run `openclaw mcp list` to confirm registration
 3. Restart OpenClaw: `openclaw restart`
-
-### Graph API 403 Forbidden
-Ensure admin consent was granted for all permissions in Azure Portal → App
-registrations → API permissions → Grant admin consent.

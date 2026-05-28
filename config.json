@@ -28,7 +28,13 @@
     "modelOverride": ""
   },
   "auth": {
-    "clientId": "YOUR_CLIENT_ID_HERE",
-    "authority": "https://login.microsoftonline.com/consumers"
+    "personal": {
+      "clientId": "YOUR_PERSONAL_CLIENT_ID",
+      "authority": "https://login.microsoftonline.com/consumers"
+    },
+    "work": {
+      "clientId": "YOUR_WORK_CLIENT_ID",
+      "tenantId": "YOUR_TENANT_ID"
+    }
   }
 }

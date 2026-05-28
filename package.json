@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "auth": "node scripts/auth.mjs",
+    "auth:personal": "node scripts/auth.mjs --account=personal",
+    "auth:work": "node scripts/auth.mjs --account=work",
     "mcp": "node scripts/mcp-server.mjs",
     "summary": "node scripts/run-summary.mjs",
     "todos": "node scripts/run-todos.mjs"

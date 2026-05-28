@@ -1,12 +1,17 @@
 /**
- * auth.mjs — OAuth Device Code Flow
+ * auth.mjs -- OAuth Device Code Flow
  *
- * Registers the user's Microsoft account with MSAL using the Device Code flow.
- * Writes access token + expiry to outlook-tokens.json and the full MSAL cache
- * (including refresh token) to outlook-msal-cache.json.
+ * Authenticates with Microsoft using the Device Code flow.
+ * Supports personal Microsoft accounts and work/school (single-tenant) accounts.
  *
  * Usage:
- *   node scripts/auth.mjs
+ *   node scripts/auth.mjs --account=personal
+ *   node scripts/auth.mjs --account=work
+ *   node scripts/auth.mjs           # auto-detects from config.json
+ *
+ * npm shortcuts:
+ *   npm run auth:personal
+ *   npm run auth:work
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -17,51 +22,106 @@ import { PublicClientApplication } from '@azure/msal-node';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = resolve(__dirname, '..');
 const WORKSPACE_ROOT = resolve(SKILL_ROOT, '..', '..');
+const CONFIG_PATH = resolve(SKILL_ROOT, 'config.json');
 
-// Write tokens to workspace root if it looks like a deployed OpenClaw environment,
-// otherwise write to the skill root.
+// Write tokens to workspace root if deployed under OpenClaw, else skill root.
 function resolveOutputPath(filename) {
   const wsParent = resolve(WORKSPACE_ROOT, 'skills');
-  if (existsSync(wsParent)) {
-    return resolve(WORKSPACE_ROOT, filename);
-  }
+  if (existsSync(wsParent)) return resolve(WORKSPACE_ROOT, filename);
   return resolve(SKILL_ROOT, filename);
 }
-
-const TOKENS_PATH = resolveOutputPath('outlook-tokens.json');
-const MSAL_CACHE_PATH = resolveOutputPath('outlook-msal-cache.json');
-const CONFIG_PATH = resolve(SKILL_ROOT, 'config.json');
 
 function loadConfig() {
   if (!existsSync(CONFIG_PATH)) {
     console.error(`ERROR: config.json not found at ${CONFIG_PATH}`);
-    console.error('Copy config.json and set your Azure clientId first.');
+    console.error('Copy config.json and set your Azure credentials first.');
     process.exit(1);
   }
   return JSON.parse(readFileSync(CONFIG_PATH, 'utf8'));
 }
 
-async function main() {
-  const config = loadConfig();
+// Parse --account=personal or --account=work from argv
+function parseAccountArg() {
+  const arg = process.argv.find((a) => a.startsWith('--account='));
+  if (arg) return arg.split('=')[1];
+  return null;
+}
 
-  if (!config.auth?.clientId || config.auth.clientId === 'YOUR_CLIENT_ID_HERE') {
-    console.error('ERROR: config.json has a placeholder clientId.');
-    console.error('Set auth.clientId to your Azure app Client ID and try again.');
+// Determine account type from config when not explicitly provided
+function detectAccount(config) {
+  const auth = config.auth;
+  if (auth?.clientId) return 'personal'; // legacy flat config
+  const hasPersonal = !!(auth?.personal?.clientId);
+  const hasWork = !!(auth?.work?.clientId);
+  if (hasPersonal && hasWork) {
+    console.error('ERROR: Both auth.personal and auth.work are configured.');
+    console.error('Specify which account to authenticate:');
+    console.error('  node scripts/auth.mjs --account=personal');
+    console.error('  node scripts/auth.mjs --account=work');
     process.exit(1);
   }
+  if (hasPersonal) return 'personal';
+  if (hasWork) return 'work';
+  console.error('ERROR: No auth configuration found in config.json.');
+  console.error('Configure auth.personal and/or auth.work, then re-run.');
+  process.exit(1);
+}
+
+// Build MSAL auth config for the selected account
+function buildAuthConfig(config, account) {
+  const auth = config.auth;
+
+  if (account === 'personal') {
+    // Support legacy flat format
+    const clientId = auth?.personal?.clientId ?? auth?.clientId;
+    const authority = auth?.personal?.authority ?? auth?.authority ?? 'https://login.microsoftonline.com/consumers';
+    if (!clientId || clientId.startsWith('YOUR_')) {
+      console.error('ERROR: auth.personal.clientId is a placeholder or missing in config.json.');
+      console.error('Set it to your Azure app Client ID and try again.');
+      process.exit(1);
+    }
+    return { clientId, authority };
+  }
+
+  if (account === 'work') {
+    const clientId = auth?.work?.clientId;
+    const tenantId = auth?.work?.tenantId;
+    const authority = auth?.work?.authority ?? (tenantId ? `https://login.microsoftonline.com/${tenantId}` : null);
+    if (!clientId || clientId.startsWith('YOUR_')) {
+      console.error('ERROR: auth.work.clientId is a placeholder or missing in config.json.');
+      console.error('Set it to your Azure work app Client ID and try again.');
+      process.exit(1);
+    }
+    if (!authority) {
+      console.error('ERROR: auth.work.tenantId (or auth.work.authority) is missing in config.json.');
+      process.exit(1);
+    }
+    return { clientId, authority };
+  }
+
+  console.error(`ERROR: Unknown account type: "${account}". Use 'personal' or 'work'.`);
+  process.exit(1);
+}
+
+async function main() {
+  const config = loadConfig();
+  const accountArg = parseAccountArg();
+  const account = accountArg ?? detectAccount(config);
+  const authConfig = buildAuthConfig(config, account);
+
+  const tokensFile = account === 'work' ? 'work-tokens.json' : 'personal-tokens.json';
+  const cacheFile = account === 'work' ? 'work-msal-cache.json' : 'personal-msal-cache.json';
+  const TOKENS_PATH = resolveOutputPath(tokensFile);
+  const MSAL_CACHE_PATH = resolveOutputPath(cacheFile);
 
   let currentCache = null;
   if (existsSync(MSAL_CACHE_PATH)) {
-    try {
-      currentCache = readFileSync(MSAL_CACHE_PATH, 'utf8');
-    } catch (_) { /* ignore */ }
+    try { currentCache = readFileSync(MSAL_CACHE_PATH, 'utf8'); } catch (_) {}
   }
 
   const cachePlugin = {
     beforeCacheAccess: async (cacheContext) => {
-      if (currentCache) {
-        cacheContext.tokenCache.deserialize(currentCache);
-      }
+      if (currentCache) cacheContext.tokenCache.deserialize(currentCache);
     },
     afterCacheAccess: async (cacheContext) => {
       if (cacheContext.cacheHasChanged) {
@@ -71,10 +131,7 @@ async function main() {
   };
 
   const pca = new PublicClientApplication({
-    auth: {
-      clientId: config.auth.clientId,
-      authority: config.auth.authority,
-    },
+    auth: authConfig,
     cache: { cachePlugin },
   });
 
@@ -92,7 +149,7 @@ async function main() {
     'User.Read',
   ];
 
-  console.log('\n🔐 Starting Microsoft OAuth Device Code Flow...\n');
+  console.log(`\n🔐 Starting Microsoft OAuth Device Code Flow (${account} account)...\n`);
 
   let result;
   try {
@@ -113,7 +170,6 @@ async function main() {
     process.exit(1);
   }
 
-  // Write access token + expiry
   const tokenData = {
     accessToken: result.accessToken,
     expiresAt: result.expiresOn?.toISOString() ?? null,
@@ -126,7 +182,6 @@ async function main() {
   writeFileSync(TOKENS_PATH, JSON.stringify(tokenData, null, 2), 'utf8');
   console.log(`✅ Access token written to: ${TOKENS_PATH}`);
 
-  // Write MSAL cache (contains refresh token for silent renewal)
   if (currentCache) {
     writeFileSync(MSAL_CACHE_PATH, currentCache, 'utf8');
     console.log(`✅ MSAL cache written to:   ${MSAL_CACHE_PATH}`);

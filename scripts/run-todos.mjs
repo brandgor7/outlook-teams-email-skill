@@ -243,10 +243,10 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 6: Get Graph token
+  // Step 6: Get work Graph token (Planner requires work/tenant account)
   let graphToken;
   try {
-    graphToken = await getToken();
+    graphToken = await getToken('work');
   } catch (err) {
     console.error(`Auth error: ${err.message}`);
     process.exit(1);

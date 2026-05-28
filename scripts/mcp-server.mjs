@@ -18,6 +18,12 @@ import { getToken } from './token.mjs';
 
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
+// Email and calendar tools use the personal account (falls back to work if
+// personal is not configured). Teams and Planner tools always use the work
+// account, which requires a single-tenant Azure app registration.
+async function getEmailToken() { return getToken('email'); }
+async function getWorkToken()  { return getToken('work'); }
+
 async function graphRequest(token, path, options = {}) {
   const url = `${GRAPH}${path}`;
   const res = await fetch(url, {
@@ -216,7 +222,7 @@ const TOOLS = [
 // ─── Tool handlers ────────────────────────────────────────────────────────────
 
 async function handleListEmails({ top = 20, unread_only = false, folder = 'inbox' }) {
-  const token = await getToken();
+  const token = await getEmailToken();
   const filter = unread_only ? '&$filter=isRead eq false' : '';
   const select = '$select=id,subject,from,receivedDateTime,isRead,bodyPreview';
   const data = await graphRequest(
@@ -235,7 +241,7 @@ async function handleListEmails({ top = 20, unread_only = false, folder = 'inbox
 }
 
 async function handleGetEmail({ id }) {
-  const token = await getToken();
+  const token = await getEmailToken();
   const m = await graphRequest(token, `/me/messages/${encodeURIComponent(id)}`);
   const bodyContent = m.body?.contentType === 'html'
     ? stripHtml(m.body.content)
@@ -253,7 +259,7 @@ async function handleGetEmail({ id }) {
 }
 
 async function handleSendEmail({ to, subject, body, cc }) {
-  const token = await getToken();
+  const token = await getEmailToken();
   const message = {
     subject,
     body: { contentType: 'Text', content: body },
@@ -270,7 +276,7 @@ async function handleSendEmail({ to, subject, body, cc }) {
 }
 
 async function handleMoveEmail({ id, folder }) {
-  const token = await getToken();
+  const token = await getEmailToken();
   const result = await graphRequest(token, `/me/messages/${encodeURIComponent(id)}/move`, {
     method: 'POST',
     body: { destinationId: folder },
@@ -279,7 +285,7 @@ async function handleMoveEmail({ id, folder }) {
 }
 
 async function handleMarkRead({ id, read }) {
-  const token = await getToken();
+  const token = await getEmailToken();
   await graphRequest(token, `/me/messages/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: { isRead: read },
@@ -288,7 +294,7 @@ async function handleMarkRead({ id, read }) {
 }
 
 async function handleListCalendar({ days = 7, top = 20 }) {
-  const token = await getToken();
+  const token = await getEmailToken();
   const now = new Date().toISOString();
   const end = new Date(Date.now() + days * 86400000).toISOString();
   const data = await graphRequest(
@@ -308,7 +314,7 @@ async function handleListCalendar({ days = 7, top = 20 }) {
 }
 
 async function handleCreateEvent({ subject, start, end, body, location, attendees }) {
-  const token = await getToken();
+  const token = await getEmailToken();
   const event = {
     subject,
     start: { dateTime: start, timeZone: 'UTC' },
@@ -330,7 +336,7 @@ async function handleCreateEvent({ subject, start, end, body, location, attendee
 }
 
 async function handleListTeams() {
-  const token = await getToken();
+  const token = await getWorkToken();
   const data = await graphRequest(token, '/me/joinedTeams?$select=id,displayName,description');
   return (data?.value ?? []).map((t) => ({
     id: t.id,
@@ -340,7 +346,7 @@ async function handleListTeams() {
 }
 
 async function handleListChannels({ teamId }) {
-  const token = await getToken();
+  const token = await getWorkToken();
   const data = await graphRequest(
     token,
     `/teams/${encodeURIComponent(teamId)}/channels?$select=id,displayName,description`
@@ -353,7 +359,7 @@ async function handleListChannels({ teamId }) {
 }
 
 async function handlePostTeamsMessage({ teamId, channelId, message }) {
-  const token = await getToken();
+  const token = await getWorkToken();
   const result = await graphRequest(
     token,
     `/teams/${encodeURIComponent(teamId)}/channels/${encodeURIComponent(channelId)}/messages`,
@@ -366,7 +372,7 @@ async function handlePostTeamsMessage({ teamId, channelId, message }) {
 }
 
 async function handleListTasks({ planId }) {
-  const token = await getToken();
+  const token = await getWorkToken();
   let tasks;
   if (planId) {
     const data = await graphRequest(
@@ -393,7 +399,7 @@ async function handleListTasks({ planId }) {
 }
 
 async function handleCreateTask({ title, planId, bucketId, dueDate, notes }) {
-  const token = await getToken();
+  const token = await getWorkToken();
 
   // Get current user id for assignment
   const me = await graphRequest(token, '/me?$select=id');
@@ -479,7 +485,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       err.message?.includes('401') ||
       err.message?.includes('token');
     const msg = isAuthError
-      ? `Auth error: ${err.message}\n\nRun: node scripts/auth.mjs`
+      ? `Auth error: ${err.message}\n\nRun: node scripts/auth.mjs --account=personal  (or --account=work)`
       : `Error: ${err.message}`;
     return {
       content: [{ type: 'text', text: msg }],

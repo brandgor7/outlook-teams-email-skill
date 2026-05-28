@@ -185,10 +185,17 @@ async function deliverTelegram(channel, text) {
   console.log(`✅ Delivered to Telegram chat ${chatId}`);
 }
 
-async function deliverTeams(channel, text, graphToken) {
+async function deliverTeams(channel, text) {
   const { teamId, channelId } = channel;
   if (!teamId || !channelId) {
-    console.warn('Teams teamId or channelId not configured in config.json — skipping Teams delivery.');
+    console.warn('Teams teamId or channelId not configured in config.json -- skipping Teams delivery.');
+    return;
+  }
+  let workToken;
+  try {
+    workToken = await getToken('work');
+  } catch (err) {
+    console.warn(`Teams delivery skipped: ${err.message}`);
     return;
   }
   const htmlText = text.replace(/\n/g, '<br>');
@@ -197,7 +204,7 @@ async function deliverTeams(channel, text, graphToken) {
     {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${graphToken}`,
+        Authorization: `Bearer ${workToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ body: { contentType: 'html', content: htmlText } }),
@@ -210,14 +217,14 @@ async function deliverTeams(channel, text, graphToken) {
   console.log(`✅ Delivered to Teams channel ${channelId}`);
 }
 
-async function deliverAll(config, summaryText, graphToken) {
+async function deliverAll(config, summaryText) {
   const channels = config.summary?.delivery?.channels ?? [];
   for (const channel of channels) {
     try {
       if (channel.type === 'telegram') {
         await deliverTelegram(channel, summaryText);
       } else if (channel.type === 'teams') {
-        await deliverTeams(channel, summaryText, graphToken);
+        await deliverTeams(channel, summaryText);
       } else {
         console.warn(`Unknown delivery channel type: ${channel.type}`);
       }
@@ -234,10 +241,10 @@ async function main() {
 
   const config = loadConfig();
 
-  // Step 1: Get Graph token
+  // Step 1: Get Graph token for email (personal account preferred, falls back to work)
   let graphToken;
   try {
-    graphToken = await getToken();
+    graphToken = await getToken('email');
   } catch (err) {
     console.error(`Auth error: ${err.message}`);
     process.exit(1);
@@ -284,7 +291,7 @@ _Reply "check my emails" to ask about any of these._`;
 
   // Step 6: Deliver
   console.log('📤 Delivering summary...');
-  await deliverAll(config, summaryOutput, graphToken);
+  await deliverAll(config, summaryOutput);
 
   // Step 7: Write summary file for run-todos.mjs
   writeFileSync(SUMMARY_PATH, summaryOutput, 'utf8');
