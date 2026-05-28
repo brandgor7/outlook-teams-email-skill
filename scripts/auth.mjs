@@ -135,19 +135,25 @@ async function main() {
     cache: { cachePlugin },
   });
 
-  const scopes = [
+  // Personal accounts do not support Teams/Planner scopes; work accounts get
+  // the full set including ChannelMessage and Tasks.
+  const PERSONAL_SCOPES = [
     'Mail.Read',
     'Mail.ReadWrite',
     'Mail.Send',
     'Calendars.Read',
     'Calendars.ReadWrite',
+    'offline_access',
+    'User.Read',
+  ];
+  const WORK_SCOPES = [
+    ...PERSONAL_SCOPES,
     'ChannelMessage.Read.All',
     'ChannelMessage.Send',
     'Tasks.Read',
     'Tasks.ReadWrite',
-    'offline_access',
-    'User.Read',
   ];
+  const scopes = account === 'work' ? WORK_SCOPES : PERSONAL_SCOPES;
 
   console.log(`\n🔐 Starting Microsoft OAuth Device Code Flow (${account} account)...\n`);
 

@@ -153,19 +153,25 @@ export async function getToken(account = 'email') {
 
   const tokens = JSON.parse(readFileSync(tokensPath, 'utf8'));
 
-  const scopes = [
+  // Personal accounts do not support Teams/Planner scopes; work accounts get
+  // the full set including ChannelMessage and Tasks.
+  const PERSONAL_SCOPES = [
     'https://graph.microsoft.com/Mail.Read',
     'https://graph.microsoft.com/Mail.ReadWrite',
     'https://graph.microsoft.com/Mail.Send',
     'https://graph.microsoft.com/Calendars.Read',
     'https://graph.microsoft.com/Calendars.ReadWrite',
+    'https://graph.microsoft.com/offline_access',
+    'https://graph.microsoft.com/User.Read',
+  ];
+  const WORK_SCOPES = [
+    ...PERSONAL_SCOPES,
     'https://graph.microsoft.com/ChannelMessage.Read.All',
     'https://graph.microsoft.com/ChannelMessage.Send',
     'https://graph.microsoft.com/Tasks.Read',
     'https://graph.microsoft.com/Tasks.ReadWrite',
-    'https://graph.microsoft.com/offline_access',
-    'https://graph.microsoft.com/User.Read',
   ];
+  const scopes = resolved === 'work' ? WORK_SCOPES : PERSONAL_SCOPES;
 
   // Attempt silent MSAL refresh
   let serializedCache = null;
