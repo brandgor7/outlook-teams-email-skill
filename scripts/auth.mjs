@@ -147,11 +147,12 @@ async function main() {
     'User.Read',
   ];
   const WORK_SCOPES = [
-    ...PERSONAL_SCOPES,
     'ChannelMessage.Read.All',
     'ChannelMessage.Send',
     'Tasks.Read',
     'Tasks.ReadWrite',
+    'offline_access',
+    'User.Read',
   ];
   const scopes = account === 'work' ? WORK_SCOPES : PERSONAL_SCOPES;
 

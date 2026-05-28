@@ -165,11 +165,12 @@ export async function getToken(account = 'email') {
     'https://graph.microsoft.com/User.Read',
   ];
   const WORK_SCOPES = [
-    ...PERSONAL_SCOPES,
     'https://graph.microsoft.com/ChannelMessage.Read.All',
     'https://graph.microsoft.com/ChannelMessage.Send',
     'https://graph.microsoft.com/Tasks.Read',
     'https://graph.microsoft.com/Tasks.ReadWrite',
+    'https://graph.microsoft.com/offline_access',
+    'https://graph.microsoft.com/User.Read',
   ];
   const scopes = resolved === 'work' ? WORK_SCOPES : PERSONAL_SCOPES;
 
