@@ -1,4 +1,24 @@
-# Outlook + Teams Email Assistant — Skill
+---
+name: outlook-teams-email-skill
+description: >-
+  Use when the user wants to read, search, draft, send, or manage Outlook email
+  or calendar events; post to Microsoft Teams channels; manage Planner tasks; or
+  run a scheduled email summary with delivery to Teams or Telegram. Connects to
+  the Microsoft Graph API via Azure app registration.
+license: MIT
+compatibility: >-
+  Requires Node.js v18+, OpenClaw with MCP server support, a Microsoft Azure app
+  registration, and outbound access to Microsoft Graph API
+  (graph.microsoft.com). Telegram delivery requires the TELEGRAM_BOT_TOKEN
+  environment variable.
+metadata:
+  author: brandgor7
+  version: 2.0.0
+  tags: outlook email teams planner calendar microsoft graph telegram summary
+allowed-tools: bash list_emails get_email send_email move_email mark_read list_calendar create_event list_teams list_channels post_teams_message list_tasks create_task
+---
+
+# Outlook + Teams Email Assistant
 
 This skill connects OpenClaw to Microsoft Outlook and Teams via the Microsoft
 Graph API. It provides two modes of operation:
@@ -110,10 +130,11 @@ _Reply "check my emails" to ask about any of these._
 ## Config Awareness
 
 Before running structured workflows, check `config.json` for:
-- `auth.clientId` — must not be `YOUR_CLIENT_ID_HERE`
+- `auth.personal.clientId` — must not be `YOUR_PERSONAL_CLIENT_ID` (if using personal account)
+- `auth.work.clientId` — must not be `YOUR_WORK_CLIENT_ID` (if using work account / Teams)
 - `summary.delivery.channels` — warn if Teams channel has empty `teamId`/`channelId`
 - `todos.delivery.planId` — warn if empty (to-dos will fail without it)
-- `llm.gatewayConfigPath` — must point to a valid `openclaw.json` with a gateway token
+- `llm.gatewayConfigPath` — only needed for `run-todos.mjs`; must point to a valid `openclaw.json`
 
 If any required values are missing, prompt the user to run the relevant setup step.
 
@@ -145,7 +166,8 @@ If any required values are missing, prompt the user to run the relevant setup st
 ### First-time Outlook Setup
 1. User says "set up Outlook" → walk them through Azure app registration
    (see README.md for the exact steps)
-2. User pastes their Client ID → write it to `config.json` under `auth.clientId`
+2. User pastes their Client ID → write it to `config.json` under `auth.personal.clientId`
+   (or `auth.work.clientId` for a work/school account)
 3. Run auth:
    ```bash
    node skills/outlook-email/scripts/auth.mjs
@@ -159,9 +181,9 @@ If any required values are missing, prompt the user to run the relevant setup st
 4. Call `list_tasks` → present available Planner plans
 5. User selects a plan → write `planId` to `config.json`
 6. Optional: user selects a bucket → write `bucketId` to `config.json`
-7. Run a dry-run summary to confirm everything looks right:
+7. Fetch emails to confirm the output format:
    ```bash
-   node skills/outlook-email/scripts/run-summary.mjs --dry-run
+   node skills/outlook-email/scripts/run-summary.mjs
    ```
 
 ---
@@ -170,7 +192,8 @@ If any required values are missing, prompt the user to run the relevant setup st
 
 - **One token, all services**: Auth covers both Outlook and Teams since both
   use Microsoft Graph. Re-authenticating refreshes access to both.
-- **LLM calls are local**: Summaries and task extraction call OpenClaw's local
-  gateway endpoint — no external API key needed.
+- **Summarisation is agent-side**: Email summaries are produced by the agent
+  (you) following the Email Summary Format above — no separate LLM API call.
+  Only `run-todos.mjs` calls the OpenClaw gateway directly for task extraction.
 - **Telegram delivery**: Requires `TELEGRAM_BOT_TOKEN` environment variable.
-  Set it in your shell before running summary scripts.
+  Set it in your shell before running delivery.
