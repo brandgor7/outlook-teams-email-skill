@@ -113,12 +113,20 @@ function resolveAccountType(auth, account) {
   );
 }
 
-function buildMsalApp(authConfig, serializedCache) {
+function buildMsalApp(authConfig, serializedCache, msalCachePath) {
+  let currentCache = serializedCache;
   const cachePlugin = {
     beforeCacheAccess: async (cacheContext) => {
-      if (serializedCache) cacheContext.tokenCache.deserialize(serializedCache);
+      if (currentCache) cacheContext.tokenCache.deserialize(currentCache);
     },
-    afterCacheAccess: async (_cacheContext) => {},
+    afterCacheAccess: async (cacheContext) => {
+      if (cacheContext.cacheHasChanged) {
+        currentCache = cacheContext.tokenCache.serialize();
+        if (msalCachePath) {
+          try { writeFileSync(msalCachePath, currentCache, 'utf8'); } catch (_) {}
+        }
+      }
+    },
   };
   return new PublicClientApplication({ auth: authConfig, cache: { cachePlugin } });
 }
@@ -182,14 +190,11 @@ export async function getToken(account = 'email') {
 
   if (serializedCache) {
     try {
-      const pca = buildMsalApp(authConfig, serializedCache);
+      const pca = buildMsalApp(authConfig, serializedCache, msalCachePath);
       const accounts = await pca.getTokenCache().getAllAccounts();
       if (accounts.length > 0) {
         const result = await pca.acquireTokenSilent({ scopes, account: accounts[0] });
-        if (result?.accessToken) {
-          writeFileSync(msalCachePath, pca.getTokenCache().serialize(), 'utf8');
-          return result.accessToken;
-        }
+        if (result?.accessToken) return result.accessToken;
       }
     } catch (err) {
       if (process.env.DEBUG) console.error(`[token:${resolved}] Silent refresh failed:`, err.message);
