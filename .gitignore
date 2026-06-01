@@ -5,6 +5,7 @@ personal-tokens.json
 personal-msal-cache.json
 work-tokens.json
 work-msal-cache.json
+outlook-emails.json
 outlook-summary.md
 run-state.json
 *.swp

@@ -38,14 +38,27 @@ Use scripts for scheduled or bulk operations. Always suggest `--dry-run` first
 so the user can preview before committing.
 
 ### Email Summary
-- **"Run the summary"** / **"Summarise my emails"** / scheduled trigger:
-  ```bash
-  node skills/outlook-email/scripts/run-summary.mjs
-  ```
-- **"Preview the summary without sending"**:
-  ```bash
-  node skills/outlook-email/scripts/run-summary.mjs --dry-run
-  ```
+
+The summary workflow is a two-step process — the script fetches emails and you
+(the agent) produce the summary using the **Email Summary Format** below.
+
+**Step 1 — Fetch emails** (script prints email data for you to read):
+```bash
+node skills/outlook-email/scripts/run-summary.mjs
+```
+Read the email data printed to stdout. Produce a summary following the
+**Email Summary Format** section below. Write the result to `outlook-summary.md`
+in the skill root.
+
+**Step 2 — Deliver** (script posts `outlook-summary.md` to configured channels):
+```bash
+node skills/outlook-email/scripts/run-summary.mjs --deliver
+```
+
+**Preview delivery without sending:**
+```bash
+node skills/outlook-email/scripts/run-summary.mjs --deliver --dry-run
+```
 
 ### To-Do Creation
 - **"Create to-dos from my emails"** / scheduled trigger (after summary):
@@ -56,6 +69,41 @@ so the user can preview before committing.
   ```bash
   node skills/outlook-email/scripts/run-todos.mjs --dry-run
   ```
+
+---
+
+## Email Summary Format
+
+When summarising emails, produce output in **exactly** this structure:
+
+```
+## 📬 Email Summary — {Day, Mon DD YYYY, HH:MM AM/PM}
+_{unreadCount} unread · {totalFetched} checked · via OpenClaw_
+
+### ⚠️ Urgent / Action Required
+- **{Sender Name}** — *{Subject}*: {one-sentence summary}
+
+### 💼 Work
+- **{Sender Name}** — *{Subject}*: {one-sentence summary}
+
+### 📰 Newsletters
+- **{Sender Name}** — *{Subject}*: {one-sentence summary}
+
+### 📁 Other
+- **{Sender Name}** — *{Subject}*: {one-sentence summary}
+
+---
+_Reply "check my emails" to ask about any of these._
+```
+
+**Rules:**
+- Use only categories that have emails; omit empty categories
+- Use the category list from `config.json` → `summary.categories`
+- Prefix urgent / action-required items with ⚠️ in both the category header and inline
+- Keep each email to one sentence
+- Target the word count from `config.json` → `summary.wordCount`
+- Use the tone from `config.json` → `summary.tone`
+- After writing the summary, save it to `outlook-summary.md` in the skill root
 
 ---
 

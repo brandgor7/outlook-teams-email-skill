@@ -1,25 +1,35 @@
 /**
- * run-summary.mjs — Email Summary Pipeline
+ * run-summary.mjs — Email Fetch + Delivery Pipeline
  *
- * Fetches recent emails from Microsoft Graph, summarises them using the
- * OpenClaw LLM gateway, and delivers the output to configured channels
- * (Telegram and/or Teams).
+ * Two modes of operation:
+ *
+ *   (default)   Fetch recent emails from Microsoft Graph and print them as
+ *               formatted text for the OpenClaw agent to read and summarise.
+ *               Also writes raw email data to outlook-emails.json.
+ *               The agent uses SKILL.md "Email Summary Format" to produce the
+ *               summary, then writes it to outlook-summary.md and calls
+ *               `node scripts/run-summary.mjs --deliver`.
+ *
+ *   --deliver   Read outlook-summary.md and post it to all configured delivery
+ *               channels (Telegram, Teams).  Combine with --dry-run to preview
+ *               without actually sending.
  *
  * Usage:
- *   node scripts/run-summary.mjs
- *   node scripts/run-summary.mjs --dry-run   # print to stdout, skip delivery
+ *   node scripts/run-summary.mjs                      # fetch + print emails
+ *   node scripts/run-summary.mjs --deliver            # deliver outlook-summary.md
+ *   node scripts/run-summary.mjs --deliver --dry-run  # preview delivery output
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { homedir } from 'os';
 import { getToken } from './token.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SKILL_ROOT = resolve(__dirname, '..');
 const WORKSPACE_ROOT = resolve(SKILL_ROOT, '..', '..');
 
+const DELIVER_MODE = process.argv.includes('--deliver');
 const DRY_RUN = process.argv.includes('--dry-run');
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
@@ -51,18 +61,9 @@ function saveState(state) {
   writeFileSync(STATE_PATH, JSON.stringify({ ...current, ...state }, null, 2), 'utf8');
 }
 
-// ─── LLM gateway token ────────────────────────────────────────────────────────
+// ─── Email paths ──────────────────────────────────────────────────────────────
 
-function getGatewayToken(config) {
-  const configPath = resolve(config.llm.gatewayConfigPath.replace('~', homedir()));
-  if (!existsSync(configPath)) {
-    throw new Error(`openclaw.json not found at ${configPath}. Is OpenClaw installed?`);
-  }
-  const gw = JSON.parse(readFileSync(configPath, 'utf8'));
-  const token = gw?.gateway?.auth?.token;
-  if (!token) throw new Error('No gateway token found in openclaw.json — ensure gateway.auth.mode is "token".');
-  return token;
-}
+const EMAILS_PATH = resolveStatePath('outlook-emails.json');
 
 // ─── Graph API helpers ────────────────────────────────────────────────────────
 
@@ -111,53 +112,6 @@ async function fetchEmails(token, config) {
     isRead: m.isRead,
     body: m.body?.contentType === 'html' ? stripHtml(m.body.content) : (m.body?.content ?? m.bodyPreview ?? ''),
   }));
-}
-
-// ─── LLM summarisation ────────────────────────────────────────────────────────
-
-async function callLlm(config, messages) {
-  const gatewayToken = getGatewayToken(config);
-  const headers = {
-    Authorization: `Bearer ${gatewayToken}`,
-    'Content-Type': 'application/json',
-    ...(config.llm.modelOverride ? { 'x-openclaw-model': config.llm.modelOverride } : {}),
-  };
-  const res = await fetch(`${config.llm.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ model: config.llm.model, messages }),
-  });
-  if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`LLM gateway error ${res.status}: ${t}`);
-  }
-  const data = await res.json();
-  return data?.choices?.[0]?.message?.content ?? '';
-}
-
-function buildSummaryPrompt(emails, config) {
-  const { wordCount = 150, tone = 'concise and professional', categories = [] } = config.summary;
-  const emailsJSON = JSON.stringify(
-    emails.map((e) => ({
-      from: e.fromName ? `${e.fromName} <${e.from}>` : e.from,
-      subject: e.subject,
-      receivedAt: e.receivedAt,
-      body: e.body.slice(0, 500), // trim to keep prompt manageable
-    })),
-    null, 2
-  );
-  return `You are summarising emails for a busy professional.
-
-Summarise the following ${emails.length} emails in approximately ${wordCount} words.
-Tone: ${tone}
-Group emails into these categories (omit empty categories): ${categories.join(', ')}
-For each email include: sender, subject, one-sentence summary.
-Flag anything marked urgent or requiring a reply with ⚠️.
-
-Return ONLY the summary text. No preamble. No JSON.
-
-Emails:
-${emailsJSON}`;
 }
 
 // ─── Delivery ─────────────────────────────────────────────────────────────────
@@ -236,12 +190,37 @@ async function deliverAll(config, summaryText) {
 
 // ─── Main pipeline ────────────────────────────────────────────────────────────
 
-async function main() {
-  console.log(`\n📬 Email Summary Pipeline${DRY_RUN ? ' (DRY RUN)' : ''}\n`);
+// --deliver: read outlook-summary.md and post to all configured channels
+async function runDeliver() {
+  console.log(`\n📤 Email Summary Delivery${DRY_RUN ? ' (DRY RUN)' : ''}\n`);
+
+  if (!existsSync(SUMMARY_PATH)) {
+    console.error(`No summary file found at: ${SUMMARY_PATH}`);
+    console.error('Generate the summary first, then re-run with --deliver.');
+    process.exit(1);
+  }
+
+  const summaryText = readFileSync(SUMMARY_PATH, 'utf8');
+  const config = loadConfig();
+
+  if (DRY_RUN) {
+    console.log('\n─── DRY RUN — would deliver ───────────────────────────────\n');
+    console.log(summaryText);
+    console.log('\n───────────────────────────────────────────────────────────\n');
+    return;
+  }
+
+  await deliverAll(config, summaryText);
+  saveState({ lastDeliveredAt: new Date().toISOString() });
+  console.log('\n✅ Delivery complete.\n');
+}
+
+// default: fetch emails and print them for the OpenClaw agent to summarise
+async function runFetch() {
+  console.log('\n📬 Email Fetch\n');
 
   const config = loadConfig();
 
-  // Step 1: Get Graph token for email (personal account preferred, falls back to work)
   let graphToken;
   try {
     graphToken = await getToken('email');
@@ -250,57 +229,58 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 2: Fetch emails
   console.log('📥 Fetching emails from Microsoft Graph...');
   const emails = await fetchEmails(graphToken, config);
-  console.log(`   Found ${emails.length} email(s).`);
+  console.log(`   Found ${emails.length} email(s).\n`);
 
   if (emails.length === 0) {
-    console.log('No emails to summarise. Exiting.');
+    console.log('No emails found. Nothing to summarise.');
     return;
   }
 
   const unreadCount = emails.filter((e) => !e.isRead).length;
+  const { wordCount = 150, tone = 'concise and professional', categories = [] } = config.summary;
 
-  // Step 3: Build prompt and call LLM
-  console.log('🤖 Calling LLM for summary...');
-  const prompt = buildSummaryPrompt(emails, config);
-  const summaryProse = await callLlm(config, [{ role: 'user', content: prompt }]);
+  // Print context header for the agent
+  console.log('─── EMAIL DATA FOR SUMMARISATION ──────────────────────────');
+  console.log(`Unread: ${unreadCount} / Total fetched: ${emails.length}`);
+  console.log(`Requested word count: ~${wordCount} | Tone: ${tone}`);
+  console.log(`Categories: ${categories.join(', ')}`);
+  console.log('────────────────────────────────────────────────────────────\n');
 
-  // Step 4: Build output markdown
-  const now = new Date();
-  const datetime = now.toLocaleString('en-US', {
-    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
-  const summaryOutput = `## 📬 Email Summary — ${datetime}
-_${unreadCount} unread · ${emails.length} checked · via OpenClaw_
-
-${summaryProse}
-
----
-_Reply "check my emails" to ask about any of these._`;
-
-  // Step 5: Dry run — print and exit
-  if (DRY_RUN) {
-    console.log('\n─── DRY RUN OUTPUT ────────────────────────────────────────\n');
-    console.log(summaryOutput);
-    console.log('\n───────────────────────────────────────────────────────────\n');
-    return;
+  for (const e of emails) {
+    const sender = e.fromName ? `${e.fromName} <${e.from}>` : e.from;
+    const readFlag = e.isRead ? '' : ' [UNREAD]';
+    console.log(`From: ${sender}${readFlag}`);
+    console.log(`Subject: ${e.subject}`);
+    console.log(`Received: ${e.receivedAt}`);
+    console.log(`Body: ${e.body.slice(0, 400)}${e.body.length > 400 ? '...' : ''}`);
+    console.log('');
   }
 
-  // Step 6: Deliver
-  console.log('📤 Delivering summary...');
-  await deliverAll(config, summaryOutput);
+  console.log('────────────────────────────────────────────────────────────');
+  console.log('Summarise the emails above following the "Email Summary Format"');
+  console.log('defined in SKILL.md. Write the result to outlook-summary.md,');
+  console.log('then run: node scripts/run-summary.mjs --deliver');
+  console.log('────────────────────────────────────────────────────────────\n');
 
-  // Step 7: Write summary file for run-todos.mjs
-  writeFileSync(SUMMARY_PATH, summaryOutput, 'utf8');
-  console.log(`📝 Summary written to: ${SUMMARY_PATH}`);
+  // Also persist raw data for reference
+  writeFileSync(
+    EMAILS_PATH,
+    JSON.stringify({ fetchedAt: new Date().toISOString(), unreadCount, emails }, null, 2),
+    'utf8'
+  );
+  console.log(`📁 Raw email data written to: ${EMAILS_PATH}\n`);
 
-  // Step 8: Update run state
-  saveState({ lastSummaryAt: now.toISOString() });
+  saveState({ lastFetchAt: new Date().toISOString() });
+}
 
-  console.log('\n✅ Summary pipeline complete.\n');
+async function main() {
+  if (DELIVER_MODE) {
+    await runDeliver();
+  } else {
+    await runFetch();
+  }
 }
 
 main().catch((err) => {

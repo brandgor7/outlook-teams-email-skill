@@ -267,22 +267,26 @@ placeholders — the code will only use whichever account is actually authentica
 
 ### Email Summary
 
-Run manually:
+The summary workflow is a two-step process. The script fetches emails and prints
+them; the OpenClaw agent reads that output and produces the summary following
+the **Email Summary Format** defined in `SKILL.md`.
+
+**Step 1 — Fetch emails** (script prints email data for the agent to read):
 ```bash
 node scripts/run-summary.mjs
 ```
 
-Dry run (preview output, skip delivery):
+The agent then produces the summary and writes it to `outlook-summary.md`.
+
+**Step 2 — Deliver** (posts `outlook-summary.md` to all configured channels):
 ```bash
-node scripts/run-summary.mjs --dry-run
+node scripts/run-summary.mjs --deliver
 ```
 
-The script:
-1. Fetches emails using the personal account token (falls back to work if not configured)
-2. Calls the LLM to produce a grouped summary
-3. Delivers to all configured channels (Telegram uses email token; Teams uses work token)
-4. Writes output to `outlook-summary.md` for follow-up
-5. Updates `run-state.json` with `lastSummaryAt`
+**Preview delivery without sending:**
+```bash
+node scripts/run-summary.mjs --deliver --dry-run
+```
 
 ### To-Do Extraction
 
@@ -335,7 +339,7 @@ openclaw cron add \
   --name "Outlook Email Summary" \
   --every "6h" \
   --session isolated \
-  --message "Run the email summary workflow by executing: node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-summary.mjs -- then confirm delivery completed or report any errors."
+  --message "Run the email summary workflow: execute 'node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-summary.mjs' to fetch emails, then summarise them following the Email Summary Format in SKILL.md, write the result to outlook-summary.md, then execute 'node /home/node/.openclaw/workspace/skills/outlook-email/scripts/run-summary.mjs --deliver' to post to all configured channels. Confirm delivery completed or report any errors."
 ```
 
 ### To-Dos (every 6 hours, 5 min after summary)
@@ -456,6 +460,7 @@ To use a specific model for summaries, set `llm.modelOverride` in `config.json`:
 | `personal-msal-cache.json` | Personal account MSAL cache (auto-generated) | ❌ |
 | `work-tokens.json` | Work account access token (auto-generated) | ❌ |
 | `work-msal-cache.json` | Work account MSAL cache (auto-generated) | ❌ |
+| `outlook-emails.json` | Latest fetched email data (auto-generated) | ❌ |
 | `outlook-summary.md` | Latest summary output (auto-generated) | ❌ |
 | `run-state.json` | Pipeline run state (auto-generated) | ❌ |
 | `node_modules/` | npm dependencies | ❌ |
