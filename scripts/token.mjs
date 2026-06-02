@@ -163,8 +163,6 @@ export async function getToken(account = 'email') {
 
   // Personal accounts do not support Teams/Planner scopes; work accounts get
   // the full set including ChannelMessage and Tasks.
-  // offline_access is an OIDC scope, not a Graph scope — MSAL manages it
-  // internally via the cached refresh token; do not include it here.
   const PERSONAL_SCOPES = [
     'https://graph.microsoft.com/Mail.Read',
     'https://graph.microsoft.com/Mail.ReadWrite',
@@ -197,7 +195,7 @@ export async function getToken(account = 'email') {
         if (result?.accessToken) return result.accessToken;
       }
     } catch (err) {
-      if (process.env.DEBUG) console.error(`[token:${resolved}] Silent refresh failed:`, err.message);
+      console.error(`[token:${resolved}] Silent refresh failed: ${err.message}`);
     }
   }
 
