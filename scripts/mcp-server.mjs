@@ -1,8 +1,8 @@
 /**
- * mcp-server.mjs — OpenClaw MCP stdio server for Outlook + Teams
+ * mcp-server.mjs — MCP stdio server for Microsoft Graph API
  *
- * Provides MCP tools for email, calendar, and Teams interactions via
- * Microsoft Graph API. Registered with OpenClaw as the "outlook" server.
+ * Exposes tools for reading and managing Outlook email, calendar events,
+ * Teams channels, and Planner tasks via Microsoft Graph API.
  *
  * Usage (registered in OpenClaw):
  *   openclaw mcp set outlook '{"command":"node","args":["<skill-root>/scripts/mcp-server.mjs"]}'
@@ -240,12 +240,17 @@ async function handleListEmails({ top = 20, unread_only = false, folder = 'inbox
   }));
 }
 
+const MAX_BODY_CHARS = 1000;
+
 async function handleGetEmail({ id }) {
   const token = await getEmailToken();
   const m = await graphRequest(token, `/me/messages/${encodeURIComponent(id)}`);
-  const bodyContent = m.body?.contentType === 'html'
+  const rawBody = m.body?.contentType === 'html'
     ? stripHtml(m.body.content)
     : (m.body?.content ?? '');
+  const bodyContent = rawBody.length > MAX_BODY_CHARS
+    ? rawBody.slice(0, MAX_BODY_CHARS) + '…'
+    : rawBody;
   return {
     id: m.id,
     subject: m.subject,

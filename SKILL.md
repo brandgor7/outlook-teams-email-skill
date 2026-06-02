@@ -2,9 +2,8 @@
 name: outlook-teams-email-skill
 description: >-
   Use when the user wants to read, search, draft, send, or manage Outlook email
-  or calendar events; post to Microsoft Teams channels; manage Planner tasks; or
-  run a scheduled email summary with delivery to Teams or Telegram. Connects to
-  the Microsoft Graph API via Azure app registration.
+  or calendar events; post to Microsoft Teams channels; or manage Planner tasks.
+  Connects to the Microsoft Graph API via Azure app registration.
 license: MIT
 compatibility: >-
   Requires Node.js v18+, OpenClaw with MCP server support, a Microsoft Azure app
@@ -14,7 +13,7 @@ compatibility: >-
 metadata:
   author: brandgor7
   version: 2.0.0
-  tags: outlook email teams planner calendar microsoft graph telegram summary
+  tags: outlook email teams planner calendar microsoft graph
 allowed-tools: bash list_emails get_email send_email move_email mark_read list_calendar create_event list_teams list_channels post_teams_message list_tasks create_task
 ---
 
@@ -38,6 +37,24 @@ specific items. The MCP server (`mcp-server.mjs`) must be registered and running
 - **"Send an email to..."** → call `send_email`
 - **"Archive / move that email"** → call `move_email`
 - **"Mark that as read"** → call `mark_read`
+
+### Email Summary
+
+After any `list_emails` or `get_email` call, always produce a formatted summary:
+
+1. Read `references/email-summary.md` — this defines the output format and prompt structure.
+2. Read `references/email-config.json` and substitute its values into the template:
+   - `{{tone}}` → `prompt.tone`
+   - `{{categories}}` → `prompt.categories`
+   - `{{summary_max_words}}` → `prompt.summary_max_words`
+   - `{{emails}}` → the full output returned by the MCP tool
+3. Render and output the completed summary following the template exactly.
+
+**If the user requests posting to Teams** (e.g. "post to Teams", "send to the channel", "share in Teams"):
+
+4. Read `outputs.teams` from `references/email-config.json` to identify the target channel.
+5. Call `list_teams` to find the team matching `outputs.teams.channel_name`, then call `list_channels` to resolve its `channelId` matching `outputs.teams.channel_id`.
+6. Call `post_teams_message` with the formatted summary as the message body.
 
 ### Calendar
 - **"What's on my calendar?"** / **"What do I have this week?"** → call `list_calendar`
@@ -92,54 +109,6 @@ node skills/outlook-email/scripts/run-summary.mjs --deliver --dry-run
 
 ---
 
-## Email Summary Format
-
-When summarising emails, produce output in **exactly** this structure:
-
-```
-## 📬 Email Summary — {Day, Mon DD YYYY, HH:MM AM/PM}
-_{unreadCount} unread · {totalFetched} checked · via OpenClaw_
-
-### ⚠️ Urgent / Action Required
-- **{Sender Name}** — *{Subject}*: {one-sentence summary}
-
-### 💼 Work
-- **{Sender Name}** — *{Subject}*: {one-sentence summary}
-
-### 📰 Newsletters
-- **{Sender Name}** — *{Subject}*: {one-sentence summary}
-
-### 📁 Other
-- **{Sender Name}** — *{Subject}*: {one-sentence summary}
-
----
-_Reply "check my emails" to ask about any of these._
-```
-
-**Rules:**
-- Use only categories that have emails; omit empty categories
-- Use the category list from `config.json` → `summary.categories`
-- Prefix urgent / action-required items with ⚠️ in both the category header and inline
-- Keep each email to one sentence
-- Target the word count from `config.json` → `summary.wordCount`
-- Use the tone from `config.json` → `summary.tone`
-- After writing the summary, save it to `outlook-summary.md` in the skill root
-
----
-
-## Config Awareness
-
-Before running structured workflows, check `config.json` for:
-- `auth.personal.clientId` — must not be `YOUR_PERSONAL_CLIENT_ID` (if using personal account)
-- `auth.work.clientId` — must not be `YOUR_WORK_CLIENT_ID` (if using work account / Teams)
-- `summary.delivery.channels` — warn if Teams channel has empty `teamId`/`channelId`
-- `todos.delivery.planId` — warn if empty (to-dos will fail without it)
-- `llm.gatewayConfigPath` — only needed for `run-todos.mjs`; must point to a valid `openclaw.json`
-
-If any required values are missing, prompt the user to run the relevant setup step.
-
----
-
 ## Auth Failure Handling
 
 - If any MCP tool returns an error containing "expired", "401", or "token" → tell
@@ -154,10 +123,10 @@ If any required values are missing, prompt the user to run the relevant setup st
 
 ## Delivery
 
-- Structured workflow output (summaries, task confirmations) is delivered to all
-  channels configured in `config.json` under `summary.delivery.channels`.
+- Structured workflow output (summaries, task confirmations) is delivered to channels
+  configured in `references/email-config.json` under `outputs`.
 - Conversational output (direct answers, email reads, drafts) stays in the current
-  chat session — do not post these to delivery channels.
+  chat session — do not post these to delivery channels unless explicitly requested.
 
 ---
 

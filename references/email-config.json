@@ -1,0 +1,26 @@
+{
+  "prompt": {
+    "categories": [
+      "Action Required",
+      "Waiting On",
+      "FYI"
+    ],
+    "tone": "executive",
+    "summary_max_words": 12
+  },
+  "outputs": {
+    "teams": {
+      "enabled": true,
+      "channel_id":
+        "19:abc123@thread.tacv2",
+      "channel_name": "#exec-digest"
+    },
+    "todos": {
+      "enabled": true,
+      "provider": "planner"
+    },
+    "calendar": {
+      "enabled": false
+    }
+  }
+}
