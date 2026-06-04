@@ -51,7 +51,7 @@ If the user requests posting to Teams (e.g. "post to Teams", "share in Teams"):
 
 If the user requests posting to Telegram (e.g. "send to Telegram", "notify me"):
 
-4. Read `outputs.telegram` from `references/email-config.json` to get `chat_id`.
+4. Read `outputs.telegram` from `references/email-config.json` to get `chat_id`. Find the Telegram token from the default harness configuration.
 5. Format the JSON summary into a concise human-readable message: lead with urgent/high-priority items, include counts, list action items. Call `send_telegram` with that text.
 
 ---
@@ -123,10 +123,10 @@ When triggered on a schedule (e.g. cron), run the full summary + delivery workfl
 ### First-time Teams Setup
 1. User says "set up Teams" → call `list_teams` and present the results
 2. User selects a team → call `list_channels` for that team
-3. User selects a channel → write `teamId` and `channelId` to `config.json`
+3. User selects a channel → write `teamId` and `channelId` to `reference/email-config.json`
 4. Call `list_tasks` → present available Planner plans
-5. User selects a plan → write `planId` to `config.json`
-6. Optional: user selects a bucket → write `bucketId` to `config.json`
+5. User selects a plan → write `planId` to `reference/config.json`
+6. Optional: user selects a bucket → write `bucketId` to `reference/config.json`
 7. Call `list_emails` with `full_body: true` to confirm email data looks correct.
 
 ---
