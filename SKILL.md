@@ -41,18 +41,18 @@ After any `list_emails` or `get_email` call, always produce a formatted summary:
    - `{{categories}}` → `prompt.categories`
    - `{{summary_max_words}}` → `prompt.summary_max_words`
    - `{{emails}}` → the full output returned by the MCP tool
-3. Render and output the completed summary following the template exactly.
+3. Produce the JSON summary. Present it to the user in a readable way in chat.
 
 If the user requests posting to Teams (e.g. "post to Teams", "share in Teams"):
 
 4. Read `outputs.teams` from `references/email-config.json` to identify the target channel.
 5. Call `list_teams` to find the matching team, then `list_channels` to resolve `channelId`.
-6. Call `post_teams_message` with the formatted summary as the message body.
+6. Call `post_teams_message` using the `teams_message` field from the JSON summary as the message body — **not** the raw JSON.
 
 If the user requests posting to Telegram (e.g. "send to Telegram", "notify me"):
 
 4. Read `outputs.telegram` from `references/email-config.json` to get `chat_id`.
-5. Call `send_telegram` with the formatted summary.
+5. Call `send_telegram` using the `teams_message` field from the JSON summary — **not** the raw JSON.
 
 ---
 
@@ -79,7 +79,7 @@ When triggered on a schedule (e.g. cron), run the full summary + delivery workfl
 
 1. Call `list_emails` with `full_body: true` (and `unread_only`/`top` from `config.json`).
 2. Produce a formatted summary following the Email summary steps above.
-3. Deliver to configured channels:
+3. Deliver to configured channels using the `teams_message` field from the JSON summary:
    - Telegram: call `send_telegram` with the chat id from `references/email-config.json`
    - Teams: call `post_teams_message` with the team/channel ids from `references/email-config.json`
 4. If `todos.enabled` is true in `config.json`: extract action items from the summary, then call `create_task` for each one using `todos.planId` and `todos.bucketId`.
