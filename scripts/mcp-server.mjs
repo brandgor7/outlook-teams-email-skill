@@ -78,6 +78,7 @@ const TOOLS = [
         top: { type: 'number', description: 'Max emails to return (default 20)', default: 20 },
         unread_only: { type: 'boolean', description: 'Only return unread emails', default: false },
         folder: { type: 'string', description: 'Mail folder name (default: inbox)', default: 'inbox' },
+        full_body: { type: 'boolean', description: 'Fetch full body instead of preview (default false)', default: false },
       },
     },
   },
@@ -217,27 +218,50 @@ const TOOLS = [
       required: ['title', 'planId'],
     },
   },
+  {
+    name: 'send_telegram',
+    description: 'Send a message to a Telegram chat via the configured bot.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        chat_id: { type: 'string', description: 'Telegram chat id' },
+        message: { type: 'string', description: 'Message text (Markdown supported)' },
+      },
+      required: ['chat_id', 'message'],
+    },
+  },
 ];
 
 // ─── Tool handlers ────────────────────────────────────────────────────────────
 
-async function handleListEmails({ top = 20, unread_only = false, folder = 'inbox' }) {
+async function handleListEmails({ top = 20, unread_only = false, folder = 'inbox', full_body = false }) {
   const token = await getEmailToken();
   const filter = unread_only ? '&$filter=isRead eq false' : '';
-  const select = '$select=id,subject,from,receivedDateTime,isRead,bodyPreview';
+  const select = full_body
+    ? '$select=id,subject,from,receivedDateTime,isRead,body'
+    : '$select=id,subject,from,receivedDateTime,isRead,bodyPreview';
   const data = await graphRequest(
     token,
     `/me/mailFolders/${encodeURIComponent(folder)}/messages?$top=${top}&${select}&$orderby=receivedDateTime desc${filter}`
   );
-  return (data?.value ?? []).map((m) => ({
-    id: m.id,
-    subject: m.subject,
-    from: m.from?.emailAddress?.address,
-    fromName: m.from?.emailAddress?.name,
-    receivedAt: m.receivedDateTime,
-    isRead: m.isRead,
-    preview: m.bodyPreview,
-  }));
+  const MAX_BODY = 1000;
+  return (data?.value ?? []).map((m) => {
+    const entry = {
+      id: m.id,
+      subject: m.subject,
+      from: m.from?.emailAddress?.address,
+      fromName: m.from?.emailAddress?.name,
+      receivedAt: m.receivedDateTime,
+      isRead: m.isRead,
+    };
+    if (full_body) {
+      const raw = m.body?.contentType === 'html' ? stripHtml(m.body.content) : (m.body?.content ?? '');
+      entry.body = raw.length > MAX_BODY ? raw.slice(0, MAX_BODY) + '…' : raw;
+    } else {
+      entry.preview = m.bodyPreview;
+    }
+    return entry;
+  });
 }
 
 const MAX_BODY_CHARS = 1000;
@@ -442,6 +466,21 @@ async function handleCreateTask({ title, planId, bucketId, dueDate, notes }) {
   return { success: true, id: created?.id, title: created?.title };
 }
 
+async function handleSendTelegram({ chat_id, message }) {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN env var is not set.');
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id, text: message, parse_mode: 'Markdown' }),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Telegram API error ${res.status}: ${t}`);
+  }
+  return { success: true, chat_id };
+}
+
 // ─── Dispatch ─────────────────────────────────────────────────────────────────
 
 const HANDLERS = {
@@ -457,6 +496,7 @@ const HANDLERS = {
   post_teams_message: handlePostTeamsMessage,
   list_tasks: handleListTasks,
   create_task: handleCreateTask,
+  send_telegram: handleSendTelegram,
 };
 
 // ─── Server setup ─────────────────────────────────────────────────────────────

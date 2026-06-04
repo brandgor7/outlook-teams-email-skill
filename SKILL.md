@@ -14,35 +14,28 @@ metadata:
   author: brandgor7
   version: 2.0.0
   tags: outlook email teams planner calendar microsoft graph
-allowed-tools: bash list_emails get_email send_email move_email mark_read list_calendar create_event list_teams list_channels post_teams_message list_tasks create_task
+allowed-tools: bash list_emails get_email send_email move_email mark_read list_calendar create_event list_teams list_channels post_teams_message list_tasks create_task send_telegram
 ---
 
 # Outlook + Teams Email Assistant
 
-This skill connects OpenClaw to Microsoft Outlook and Teams via the Microsoft
-Graph API. It provides two modes of operation:
+Connects to Microsoft Outlook and Teams via the Microsoft Graph API.
 
 ---
 
-## Conversational Mode (MCP tools)
+## Email
 
-Use MCP tools directly when the user asks ad-hoc questions or wants to act on
-specific items. The MCP server (`mcp-server.mjs`) must be registered and running.
-
-### Email
 - **"Check my emails"** / **"What's in my inbox?"** → call `list_emails`
 - **"Show me unread emails"** → call `list_emails` with `unread_only: true`
-- **"Read that email from John"** / **"Open the email about the project"** → call `get_email` with the relevant id (look up id with `list_emails` first if needed)
-- **"Draft a reply to..."** → call `get_email` first to read the original, then compose a reply and call `send_email`
+- **"Read that email from John"** → call `get_email` (look up id with `list_emails` first if needed)
+- **"Draft a reply to..."** → call `get_email`, compose a reply, then call `send_email`
 - **"Send an email to..."** → call `send_email`
 - **"Archive / move that email"** → call `move_email`
 - **"Mark that as read"** → call `mark_read`
 
-### Email Summary
-
 After any `list_emails` or `get_email` call, always produce a formatted summary:
 
-1. Read `references/email-summary.md` — this defines the output format and prompt structure.
+1. Read `references/email-summary.md` — defines the output format and prompt structure.
 2. Read `references/email-config.json` and substitute its values into the template:
    - `{{tone}}` → `prompt.tone`
    - `{{categories}}` → `prompt.categories`
@@ -50,17 +43,28 @@ After any `list_emails` or `get_email` call, always produce a formatted summary:
    - `{{emails}}` → the full output returned by the MCP tool
 3. Render and output the completed summary following the template exactly.
 
-**If the user requests posting to Teams** (e.g. "post to Teams", "send to the channel", "share in Teams"):
+If the user requests posting to Teams (e.g. "post to Teams", "share in Teams"):
 
 4. Read `outputs.teams` from `references/email-config.json` to identify the target channel.
-5. Call `list_teams` to find the team matching `outputs.teams.channel_name`, then call `list_channels` to resolve its `channelId` matching `outputs.teams.channel_id`.
+5. Call `list_teams` to find the matching team, then `list_channels` to resolve `channelId`.
 6. Call `post_teams_message` with the formatted summary as the message body.
 
-### Calendar
+If the user requests posting to Telegram (e.g. "send to Telegram", "notify me"):
+
+4. Read `outputs.telegram` from `references/email-config.json` to get `chat_id`.
+5. Call `send_telegram` with the formatted summary.
+
+---
+
+## Calendar
+
 - **"What's on my calendar?"** / **"What do I have this week?"** → call `list_calendar`
 - **"Create a meeting..."** / **"Schedule..."** → call `create_event`
 
-### Teams
+---
+
+## Teams
+
 - **"Post to Teams..."** → call `post_teams_message`
 - **"What teams am I in?"** → call `list_teams`
 - **"What channels are in [team]?"** → call `list_channels`
@@ -69,43 +73,16 @@ After any `list_emails` or `get_email` call, always produce a formatted summary:
 
 ---
 
-## Structured Mode (Scripts)
+## Scheduled Workflows
 
-Use scripts for scheduled or bulk operations. Always suggest `--dry-run` first
-so the user can preview before committing.
+When triggered on a schedule (e.g. cron), run the full summary + delivery workflow:
 
-### Email Summary
-
-The summary workflow is a two-step process — the script fetches emails and you
-(the agent) produce the summary using the **Email Summary Format** below.
-
-**Step 1 — Fetch emails** (script prints email data for you to read):
-```bash
-node skills/outlook-email/scripts/run-summary.mjs
-```
-Read the email data printed to stdout. Produce a summary following the
-**Email Summary Format** section below. Write the result to `outlook-summary.md`
-in the skill root.
-
-**Step 2 — Deliver** (script posts `outlook-summary.md` to configured channels):
-```bash
-node skills/outlook-email/scripts/run-summary.mjs --deliver
-```
-
-**Preview delivery without sending:**
-```bash
-node skills/outlook-email/scripts/run-summary.mjs --deliver --dry-run
-```
-
-### To-Do Creation
-- **"Create to-dos from my emails"** / scheduled trigger (after summary):
-  ```bash
-  node skills/outlook-email/scripts/run-todos.mjs
-  ```
-- **"Show me what tasks would be created"**:
-  ```bash
-  node skills/outlook-email/scripts/run-todos.mjs --dry-run
-  ```
+1. Call `list_emails` with `full_body: true` (and `unread_only`/`top` from `config.json`).
+2. Produce a formatted summary following the Email summary steps above.
+3. Deliver to configured channels:
+   - Telegram: call `send_telegram` with the chat id from `references/email-config.json`
+   - Teams: call `post_teams_message` with the team/channel ids from `references/email-config.json`
+4. If `todos.enabled` is true in `config.json`: extract action items from the summary, then call `create_task` for each one using `todos.planId` and `todos.bucketId`.
 
 ---
 
@@ -114,7 +91,7 @@ node skills/outlook-email/scripts/run-summary.mjs --deliver --dry-run
 - If any MCP tool returns an error containing "expired", "401", or "token" → tell
   the user to re-authenticate:
   ```bash
-  node skills/outlook-email/scripts/auth.mjs
+  node scripts/auth.mjs --account=personal   # or --account=work
   ```
 - Never silently swallow auth errors — always surface them to the user.
 - After re-authentication, retry the operation automatically.
@@ -123,10 +100,10 @@ node skills/outlook-email/scripts/run-summary.mjs --deliver --dry-run
 
 ## Delivery
 
-- Structured workflow output (summaries, task confirmations) is delivered to channels
-  configured in `references/email-config.json` under `outputs`.
-- Conversational output (direct answers, email reads, drafts) stays in the current
-  chat session — do not post these to delivery channels unless explicitly requested.
+- Summary and task confirmation output is delivered to channels configured in
+  `references/email-config.json` under `outputs`.
+- Direct answers, email reads, and drafts stay in the current chat session —
+  do not post these to delivery channels unless explicitly requested.
 
 ---
 
@@ -139,7 +116,7 @@ node skills/outlook-email/scripts/run-summary.mjs --deliver --dry-run
    (or `auth.work.clientId` for a work/school account)
 3. Run auth:
    ```bash
-   node skills/outlook-email/scripts/auth.mjs
+   node scripts/auth.mjs --account=personal
    ```
 4. Verify with `list_emails` — if it returns results, auth is working
 
@@ -150,10 +127,7 @@ node skills/outlook-email/scripts/run-summary.mjs --deliver --dry-run
 4. Call `list_tasks` → present available Planner plans
 5. User selects a plan → write `planId` to `config.json`
 6. Optional: user selects a bucket → write `bucketId` to `config.json`
-7. Fetch emails to confirm the output format:
-   ```bash
-   node skills/outlook-email/scripts/run-summary.mjs
-   ```
+7. Call `list_emails` with `full_body: true` to confirm email data looks correct.
 
 ---
 
@@ -161,8 +135,5 @@ node skills/outlook-email/scripts/run-summary.mjs --deliver --dry-run
 
 - **One token, all services**: Auth covers both Outlook and Teams since both
   use Microsoft Graph. Re-authenticating refreshes access to both.
-- **Summarisation is agent-side**: Email summaries are produced by the agent
-  (you) following the Email Summary Format above — no separate LLM API call.
-  Only `run-todos.mjs` calls the OpenClaw gateway directly for task extraction.
 - **Telegram delivery**: Requires `TELEGRAM_BOT_TOKEN` environment variable.
   Set it in your shell before running delivery.
