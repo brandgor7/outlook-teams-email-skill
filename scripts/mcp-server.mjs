@@ -466,10 +466,8 @@ async function handleCreateTask({ title, planId, bucketId, dueDate, notes }) {
   return { success: true, id: created?.id, title: created?.title };
 }
 
-async function handleSendTelegram({ chat_id, message }) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  if (!botToken) throw new Error('TELEGRAM_BOT_TOKEN env var is not set.');
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+async function handleSendTelegram({ chat_id, token, message }) {
+  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id, text: message, parse_mode: 'Markdown' }),

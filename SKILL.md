@@ -8,8 +8,7 @@ license: MIT
 compatibility: >-
   Requires Node.js v18+, OpenClaw with MCP server support, a Microsoft Azure app
   registration, and outbound access to Microsoft Graph API
-  (graph.microsoft.com). Telegram delivery requires the TELEGRAM_BOT_TOKEN
-  environment variable.
+  (graph.microsoft.com).
 metadata:
   author: brandgor7
   version: 2.0.0
@@ -51,7 +50,7 @@ If the user requests posting to Teams (e.g. "post to Teams", "share in Teams"):
 
 If the user requests posting to Telegram (e.g. "send to Telegram", "notify me"):
 
-4. Read `outputs.telegram` from `references/email-config.json` to get `chat_id`. Find the Telegram token from the default harness configuration.
+4. Read `outputs.telegram` from `references/email-config.json` to get `chat_id` and `token`.
 5. Format the JSON summary into a concise human-readable message: lead with urgent/high-priority items, include counts, list action items. Call `send_telegram` with that text.
 
 ---
@@ -133,7 +132,5 @@ When triggered on a schedule (e.g. cron), run the full summary + delivery workfl
 
 ## Notes
 
-- **One token, all services**: Auth covers both Outlook and Teams since both
-  use Microsoft Graph. Re-authenticating refreshes access to both.
-- **Telegram delivery**: Requires `TELEGRAM_BOT_TOKEN` environment variable.
-  Set it in your shell before running delivery.
+- Do not ask the user for confirmation when defaults are available.
+- For fetching emails, assume the time range as yesterday and today unless otherwise stated by the user.

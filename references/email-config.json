@@ -16,7 +16,8 @@
       "channel_name": "#exec-digest"
     },
     "telegram": {
-        "chat_id": "1234"
+        "chat_id": "1234",
+        "token": "abc"
     },
     "todos": {
       "enabled": true,
