@@ -20,10 +20,7 @@ OUTPUT (strict JSON only):
   "ignored": N,
   "categories": { ... },
   "top_priorities": [...],
-  "todos": [...],
-  "teams_message": "2-3 sentences,
-    plain English, lead with
-    urgent items, max 150 words."
+  "todos": [...]
 }
 
 EMAILS TO PROCESS:

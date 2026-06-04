@@ -47,12 +47,12 @@ If the user requests posting to Teams (e.g. "post to Teams", "share in Teams"):
 
 4. Read `outputs.teams` from `references/email-config.json` to identify the target channel.
 5. Call `list_teams` to find the matching team, then `list_channels` to resolve `channelId`.
-6. Call `post_teams_message` using the `teams_message` field from the JSON summary as the message body — **not** the raw JSON.
+6. Format the JSON summary into a concise human-readable message: lead with urgent/high-priority items, include counts, list action items. Call `post_teams_message` with that text.
 
 If the user requests posting to Telegram (e.g. "send to Telegram", "notify me"):
 
 4. Read `outputs.telegram` from `references/email-config.json` to get `chat_id`.
-5. Call `send_telegram` using the `teams_message` field from the JSON summary — **not** the raw JSON.
+5. Format the JSON summary into a concise human-readable message: lead with urgent/high-priority items, include counts, list action items. Call `send_telegram` with that text.
 
 ---
 
@@ -79,7 +79,7 @@ When triggered on a schedule (e.g. cron), run the full summary + delivery workfl
 
 1. Call `list_emails` with `full_body: true` (and `unread_only`/`top` from `config.json`).
 2. Produce a formatted summary following the Email summary steps above.
-3. Deliver to configured channels using the `teams_message` field from the JSON summary:
+3. Format the JSON summary into a concise human-readable message and deliver to configured channels:
    - Telegram: call `send_telegram` with the chat id from `references/email-config.json`
    - Teams: call `post_teams_message` with the team/channel ids from `references/email-config.json`
 4. If `todos.enabled` is true in `config.json`: extract action items from the summary, then call `create_task` for each one using `todos.planId` and `todos.bucketId`.
